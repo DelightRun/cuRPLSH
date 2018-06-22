@@ -2,10 +2,9 @@
 #include <iostream>
 
 #include "device_tensor.h"
-#include "constants.h"
 #include "timer.h"
-
-#include "norm.h"
+#include "internal/constants.h"
+#include "internal/norm.h"
 
 int main(int argc, const char** argv) {
   int devId = getCudaDevice(argc, argv);

@@ -1,7 +1,7 @@
 add_subdirectory(googletest)
 
 include_directories(googletest/googletest/include)
-include_directories(${PROJECT_SOURCE_DIR}/src)
+include_directories(${PROJECT_SOURCE_DIR}/include)
 
 FILE(GLOB TEST_FILES src/*.cpp)
 set(SOURCE_FILES test_all.cpp ${TEST_FILES})

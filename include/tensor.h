@@ -3,12 +3,10 @@
 #include <cstddef>
 #include <initializer_list>
 
-#include <cuda_runtime.h>
-
-#include "assertions.h"
-#include "cuda_utils.h"
-#include "constants.h"
-#include "traits.h"
+#include "internal/assertions.h"
+#include "internal/constants.h"
+#include "internal/cuda_utils.h"
+#include "internal/traits.h"
 
 namespace curplsh {
 

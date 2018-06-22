@@ -3,10 +3,11 @@
 
 #include "device_resources.h"
 #include "device_tensor.h"
-#include "norm.h"
-#include "search.h"
-#include "constants.h"
 #include "timer.h"
+
+#include "internal/norm.h"
+#include "internal/search.h"
+#include "internal/constants.h"
 
 int main(int argc, const char** argv) {
   int device = getCudaDevice(argc, argv);

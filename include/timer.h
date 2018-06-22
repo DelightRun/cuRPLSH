@@ -3,9 +3,7 @@
 #include <chrono>
 #include <iostream>
 
-#include <cuda_runtime.h>
-
-#include "cuda_utils.h"
+#include "internal/cuda_utils.h"
 
 namespace curplsh {
 

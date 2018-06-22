@@ -1,8 +1,6 @@
 #pragma once
 
-#include <cuda.h>
-
-#include "cuda_utils.h"
+#include "internal/cuda_utils.h"
 
 #if CUDA_VERSION >= 8000
 #define UNIFIED_MEMORY 1

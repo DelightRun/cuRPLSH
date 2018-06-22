@@ -1,10 +1,9 @@
 #pragma once
 
-#include <cuda_runtime.h>
 #include <string>
 
-#include "assertions.h"
-#include "cuda_utils.h"
+#include "internal/assertions.h"
+#include "internal/cuda_utils.h"
 
 namespace curplsh {
 

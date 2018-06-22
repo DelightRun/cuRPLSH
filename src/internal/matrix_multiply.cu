@@ -1,7 +1,7 @@
-#include "assertions.h"
-#include "cuda_utils.h"
+#include "internal/matrix_multiply.h"
 
-#include "matrix_multiply.h"
+#include "internal/assertions.h"
+#include "internal/cuda_utils.h"
 
 namespace curplsh {
 
@@ -67,4 +67,5 @@ void matrixMultiply(Tensor<float, 2>& c, bool transC,  // Matrix C
   return matrixMultiply<float>(c, transC, a, transA, b, transB,  //
                                alpha, beta, handle, stream);
 }
-}
+
+}   // namespace curplsh

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "tensor.h"
-
 #include "memory_space.h"
 
 namespace curplsh {

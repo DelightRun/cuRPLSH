@@ -1,21 +1,17 @@
-#include "search.h"
-
-#include <cuda.h>
-#include <cuda_runtime.h>
+#include "internal/search.h"
 
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
 #include <thrust/for_each.h>
 
-#include "matrix_multiply.h"
-#include "norm.h"
-#include "select.h"
-#include "tensor.h"
-#include "assertions.h"
-#include "cuda_utils.h"
-#include "kernel_utils.cuh"
-#include "traits.h"
+#include "internal/assertions.h"
+#include "internal/cuda_utils.h"
+#include "internal/kernel_utils.cuh"
+#include "internal/matrix_multiply.h"
+#include "internal/norm.h"
+#include "internal/select.h"
+#include "internal/traits.h"
 
 namespace curplsh {
 
@@ -78,7 +74,8 @@ void chooseTileSize(const IndexT numQueries, const IndexT numBases, const IndexT
 }  // namespace
 
 template <typename T, typename IndexT>
-void searchL2Distance(DeviceResources* resources, const Tensor<T, 2>& bases, // TODO basesTranspose
+void searchL2Distance(DeviceResources* resources,
+                      const Tensor<T, 2>& bases,  // TODO basesTranspose
                       Tensor<T, 1>* basesNorm, const Tensor<T, 2>& queries, IndexT k,
                       Tensor<IndexT, 2>& indices, Tensor<T, 2>& distances,
                       bool needRealDistances) {
@@ -182,7 +179,8 @@ void searchL2Distance(DeviceResources* resources, const Tensor<T, 2>& bases, // 
                  streams[currentStream]);
         if (needRealDistances) {
           // TODO add queries'norm to get real distances
-          // computeRealDistance(queriesNormView, distancesView, streams[currentStream]);
+          // computeRealDistance(queriesNormView, distancesView,
+          // streams[currentStream]);
         }
       } else {
         auto basesNormView = basesNorm->narrow(0, j, currentNumBases);
@@ -218,4 +216,5 @@ void searchL2Distance(DeviceResources* resources, const Tensor<float, 2>& bases,
   searchL2Distance<float, int>(resources, bases, basesNorm, queries, k, indices,
                                distances, needRealDistances);
 }
+
 }  // namespace curplsh

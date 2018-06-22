@@ -1,11 +1,11 @@
+#include "internal/norm.h"
+
 #include <type_traits>
 
-#include "reductions.cuh"
-#include "cuda_utils.h"
-#include "kernel_utils.cuh"
-#include "math_utils.h"
-
-#include "norm.h"
+#include "internal/cuda_utils.h"
+#include "internal/kernel_utils.cuh"
+#include "internal/math_utils.h"
+#include "internal/reductions.cuh"
 
 namespace curplsh {
 
@@ -33,8 +33,7 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
   T batchNorms[BatchSize];
 
   if (isLastBatch) {
-    int lastBatchSize =
-        divUp(vectors.getSize(0) - idxOffset, numVecsPerIter);
+    int lastBatchSize = divUp(vectors.getSize(0) - idxOffset, numVecsPerIter);
 
     for (int idx = 0; idx < lastBatchSize; ++idx) {
       batchNorms[idx] = NumericTraits<T>::zero();

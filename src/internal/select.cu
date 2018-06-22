@@ -1,9 +1,9 @@
-#include "select.h"
+#include "internal/select.h"
 
-#include "heap.cuh"
-#include "reductions.cuh"
-#include "kernel_utils.cuh"
-#include "pair.cuh"
+#include "internal/heap.cuh"
+#include "internal/reductions.cuh"
+#include "internal/kernel_utils.cuh"
+#include "internal/pair.cuh"
 
 namespace curplsh {
 
