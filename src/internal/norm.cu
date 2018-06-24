@@ -2,6 +2,7 @@
 
 #include <type_traits>
 
+#include "internal/constants.h"
 #include "internal/cuda_utils.h"
 #include "internal/kernel_utils.cuh"
 #include "internal/math_utils.h"
@@ -158,8 +159,8 @@ inline void computeL2Norm(const Tensor<TVec, 2, IndexT>& vectors,
     EXECUTE_L2_NORM_SPECIAL(64);
   } else if (dim == 128) {
     EXECUTE_L2_NORM_SPECIAL(128);
-  } else if (dim > 1024) {
-    EXECUTE_L2_NORM(1024, -1);
+  } else if (dim > kMaxThreadsPerBlock) {
+    EXECUTE_L2_NORM(kMaxThreadsPerBlock, -1);
   } else {
     EXECUTE_L2_NORM(dim, 1);
   }

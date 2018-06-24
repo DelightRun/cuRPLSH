@@ -6,6 +6,7 @@
 #include <thrust/for_each.h>
 
 #include "internal/assertions.h"
+#include "internal/broadcast.h"
 #include "internal/cuda_utils.h"
 #include "internal/kernel_utils.cuh"
 #include "internal/matrix_multiply.h"
@@ -178,9 +179,9 @@ void searchL2Distance(DeviceResources* resources,
         l2Select(tileDistanceBufView, *basesNorm, distancesView, indicesView, k,
                  streams[currentStream]);
         if (needRealDistances) {
-          // TODO add queries'norm to get real distances
-          // computeRealDistance(queriesNormView, distancesView,
-          // streams[currentStream]);
+          // add queries'norm to get real distances
+          broadcastAlongRowsSum(queriesNormView, distancesView,
+                                streams[currentStream]);
         }
       } else {
         auto basesNormView = basesNorm->narrow(0, j, currentNumBases);
@@ -189,7 +190,8 @@ void searchL2Distance(DeviceResources* resources,
                  indicesBufBaseView, k, streams[currentStream]);
 
         if (needRealDistances) {
-          // TODO
+          broadcastAlongRowsSum(queriesNormView, distancesBufBaseView,
+                                streams[currentStream]);
         }
       }
     }
