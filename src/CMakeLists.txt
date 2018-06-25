@@ -1,17 +1,20 @@
-set(SOURCE_FILES
+set(CPP_SOURCE_FILES
   memory_space.cpp
+  index.cpp
+  index_bf.cpp
 )
 
-set(INTERNAL_SOURCE_FILES
-  internal/matrix_multiply.cu
+set(CUDA_SOURCE_FILES
+  internal/broadcast.cu
   internal/norm.cu
+  internal/matrix_multiply.cu
   internal/search.cu
   internal/select.cu
 )
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-cuda_add_library(${PROJECT_NAME} ${LIB_TYPE} ${SOURCE_FILES} ${INTERNAL_SOURCE_FILES})
+cuda_add_library(${PROJECT_NAME} ${LIB_TYPE} ${CPP_SOURCE_FILES} ${CUDA_SOURCE_FILES})
 
 target_link_libraries(${PROJECT_NAME}
   ${CUDA_LIBRARIES}

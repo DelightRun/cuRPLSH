@@ -79,7 +79,7 @@ void searchL2Distance(DeviceResources* resources,
                       const Tensor<T, 2>& bases,  // TODO basesTranspose
                       Tensor<T, 1>* basesNorm, const Tensor<T, 2>& queries, IndexT k,
                       Tensor<IndexT, 2>& indices, Tensor<T, 2>& distances,
-                      bool needRealDistances) {
+                      bool computeExactDistances) {
   runtime_assert(distances.getSize(0) == queries.getSize(0));
   runtime_assert(indices.getSize(0) == queries.getSize(0));
   runtime_assert(distances.getSize(1) == k);
@@ -178,7 +178,7 @@ void searchL2Distance(DeviceResources* resources,
         // we directly write into final output
         l2Select(tileDistanceBufView, *basesNorm, distancesView, indicesView, k,
                  streams[currentStream]);
-        if (needRealDistances) {
+        if (computeExactDistances) {
           // add queries'norm to get real distances
           broadcastAlongRowsSum(queriesNormView, distancesView,
                                 streams[currentStream]);
@@ -189,7 +189,7 @@ void searchL2Distance(DeviceResources* resources,
         l2Select(tileDistanceBufView, basesNormView, distancesBufBaseView,
                  indicesBufBaseView, k, streams[currentStream]);
 
-        if (needRealDistances) {
+        if (computeExactDistances) {
           broadcastAlongRowsSum(queriesNormView, distancesBufBaseView,
                                 streams[currentStream]);
         }
@@ -214,9 +214,9 @@ void searchL2Distance(DeviceResources* resources,
 void searchL2Distance(DeviceResources* resources, const Tensor<float, 2>& bases,
                       Tensor<float, 1>* basesNorm, const Tensor<float, 2>& queries,
                       int k, Tensor<int, 2>& indices, Tensor<float, 2>& distances,
-                      bool needRealDistances) {
+                      bool computeExactDistances) {
   searchL2Distance<float, int>(resources, bases, basesNorm, queries, k, indices,
-                               distances, needRealDistances);
+                               distances, computeExactDistances);
 }
 
 }  // namespace curplsh

@@ -1318,27 +1318,22 @@ inline int getNumDevices() {
   return device_count;
 }
 
-inline cudaDeviceProp getDeviceProperties(int devId) {
-  // FIXME Cached version cannot implemented as inline
-  // And for now, cached is not necessary
+inline cudaDeviceProp getDeviceProperties(int device) {
   static std::mutex mutex;
   static std::unordered_map<int, cudaDeviceProp> properties;
 
   std::lock_guard<std::mutex> gurad(mutex);
 
-  auto it = properties.find(devId);
+  auto it = properties.find(device);
   if (it == properties.end()) {
     cudaDeviceProp prop;
-    checkCudaErrors(cudaGetDeviceProperties(&prop, devId));
+    checkCudaErrors(cudaGetDeviceProperties(&prop, device));
 
-    properties[devId] = prop;
-    it = properties.find(devId);
+    properties[device] = prop;
+    it = properties.find(device);
   }
 
   return it->second;
-  /* cudaDeviceProp prop; */
-  /* checkCudaErrors(cudaGetDeviceProperties(&prop, devId)); */
-  /* return prop; */
 }
 
 inline const cudaDeviceProp getCurrentDeviceProperties() {
@@ -1361,24 +1356,51 @@ inline size_t getMaxSharedMemPerBlockCurrentDevice() {
   return getMaxThreadsPerBlock(getCurrentDevice());
 }
 
+inline bool getFullUnifiedMemorySupport(int device) {
+  return getDeviceProperties(device).major >= 6;
+}
+
+inline bool getFullUnifiedMemorySupportCurrentDevice() {
+  return getFullUnifiedMemorySupport(getCurrentDevice());
+}
+
 inline int getDeviceForAddress(const void *ptr) {
   if (!ptr) {
-    return -2;
+    return -1;
   }
 
   cudaPointerAttributes attr;
   auto err = cudaPointerGetAttributes(&attr, ptr);
-  runtime_assert(err == cudaSuccess || err == cudaErrorInvalidValue);
+  host_assert(err == cudaSuccess || err == cudaErrorInvalidValue);
 
   if (err == cudaErrorInvalidValue) {
     // Make sure the curent thread error status has been reset
     err = cudaGetLastError();
-    runtime_assert(err == cudaErrorInvalidValue);
-    return -2;
+    host_assert(err == cudaErrorInvalidValue);
+    return -1;
   } else if (attr.memoryType == cudaMemoryTypeHost) {
     return -1;
   } else {
     return attr.device;
+  }
+}
+
+inline int getIsManagedForAddress(const void *ptr) {
+  if (!ptr) {
+    return -1;
+  }
+
+  cudaPointerAttributes attr;
+  auto err = cudaPointerGetAttributes(&attr, ptr);
+  host_assert(err == cudaSuccess || err == cudaErrorInvalidValue);
+
+  if (err == cudaErrorInvalidValue) {
+    // Make sure the curent thread error status has been reset
+    err = cudaGetLastError();
+    host_assert(err == cudaErrorInvalidValue);
+    return -1;
+  } else {
+    return attr.isManaged;
   }
 }
 

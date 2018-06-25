@@ -15,7 +15,14 @@ enum class MemorySpace {
   Unified,
 };
 
+/// Return memory space fo the given ptr, assume Device for host ptr
+template <typename T>
+inline MemorySpace getMemorySpace(T* ptr) {
+  return getIsManagedForAddress(ptr) == 1 ? MemorySpace::Unified
+                                          : MemorySpace::Device;
+}
+
 /// Allocates CUDA memory
 void allocMemory(void** ptr, size_t size, MemorySpace space);
 
-}   // namespace curplsh
+}  // namespace curplsh

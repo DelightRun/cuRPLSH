@@ -1,7 +1,7 @@
 #pragma once
 
-#include "tensor.h"
 #include "memory_space.h"
+#include "tensor.h"
 
 namespace curplsh {
 
@@ -58,7 +58,7 @@ class DeviceTensor : public Tensor<T, Dim, IndexT, PtrTraits> {
       : Tensor<T, Dim, IndexT, PtrTraits>(nullptr, sizes),
         allocState_(AllocState::Owner),
         space_(space) {
-    alloc_();
+    allocate_();
   }
 
   /// Constructs a tensor of given size, allocating memory locally
@@ -67,39 +67,47 @@ class DeviceTensor : public Tensor<T, Dim, IndexT, PtrTraits> {
       : Tensor<T, Dim, IndexT, PtrTraits>(nullptr, sizes),
         allocState_(AllocState::Owner),
         space_(space) {
-    alloc_();
+    allocate_();
   }
 
-  /// Constructs a tensor of given size, referencing the given memory
-  /// If memory locate on host and we don't use unified memory,
-  /// then alloc memory and copy
+  /// Constructs a tensor of given size, referencing the given memory.
+  /// If tryCopy is true, memory locate on host and we don't use unified memory,
+  /// then we alloc memory and copy from given data
   __host__ DeviceTensor(DataPtrType data, const IndexType sizes[Dim],
-                        MemorySpace space)
+                        bool tryCopy = true, cudaStream_t stream = 0)
       : Tensor<T, Dim, IndexT, PtrTraits>(data, sizes),
         allocState_(AllocState::NotOwner),
-        space_(space) {
-    ctorAllocCopy_(data);
+        space_{getMemorySpace(data)} {
+    if (tryCopy) {
+      ctorAllocCopy_(data, stream);
+    }
   }
 
-  /// Constructs a tensor of given size, referencing the given memory
-  /// If memory locate on host and we don't use unified memory,
-  /// then alloc memory and copy
+  /// Constructs a tensor of given size, referencing the given memory.
+  /// If tryCopy is true, memory locate on host and we don't use unified memory,
+  /// then we alloc memory and copy from given data
   __host__ DeviceTensor(DataPtrType data, std::initializer_list<IndexType> sizes,
-                        MemorySpace space)
+                        bool tryCopy = true, cudaStream_t stream = 0)
       : Tensor<T, Dim, IndexT, PtrTraits>(data, sizes),
         allocState_(AllocState::NotOwner),
-        space_(space) {
-    ctorAllocCopy_(data);
+        space_(getMemorySpace(data)) {
+    if (tryCopy) {
+      ctorAllocCopy_(data, stream);
+    }
   }
 
-  /// Constructs a tensor of given size and strides, referencing the given
-  /// memory
+  /// Constructs a tensor of given size, referencing the given memory.
+  /// If tryCopy is true, memory locate on host and we don't use unified memory,
+  /// then we alloc memory and copy from given data
   __host__ DeviceTensor(DataPtrType data, const IndexType sizes[Dim],
-                        const IndexType strides[Dim], MemorySpace space)
+                        const IndexType strides[Dim], bool tryCopy = true,
+                        cudaStream_t stream = 0)
       : Tensor<T, Dim, IndexT, PtrTraits>(data, sizes, strides),
         allocState_(AllocState::NotOwner),
-        space_(space) {
-    ctorAllocCopy_(data);
+        space_(getMemorySpace(data)) {
+    if (tryCopy) {
+      ctorAllocCopy_(data, stream);
+    }
   }
 
   /// Deep Copy Constructor
@@ -108,7 +116,7 @@ class DeviceTensor : public Tensor<T, Dim, IndexT, PtrTraits> {
         allocState_(AllocState::Owner),
         space_(space) {
     host_assert(other.isContiguous());
-    alloc_();
+    allocate_();
     this->copyFrom(other);
   }
 
@@ -136,22 +144,25 @@ class DeviceTensor : public Tensor<T, Dim, IndexT, PtrTraits> {
   MemorySpace space_;
 
   // WARNING Only can be used in ctor
-  __host__ inline void alloc_() {
+  __host__ inline void allocate_() {
     allocMemory((void**)&this->data_, this->getDataMemSize(), space_);
     host_assert(this->data_ || (this->getDataMemSize() == 0));
+    allocState_ = AllocState::Owner;
   }
 
-  __host__ inline void ctorAllocCopy_(DataPtrType data) {
-    if ((space_ == MemorySpace::Device) &&
-        (getDeviceForAddress(this->data()) == -1)) {
-      // Set allocState
-      allocState_ = AllocState::Owner;
+  __host__ inline void ctorAllocCopy_(DataPtrType data, cudaStream_t stream) {
+    if (space_ == MemorySpace::Device) {
+      int currentDevice = getCurrentDevice();
+      int srcDevice = getDeviceForAddress(data);
 
-      // Copy data from host
-      alloc_();
-      checkCudaErrors(cudaMemcpy(this->data_, data, this->getDataMemSize(),
-                                 cudaMemcpyHostToDevice));
+      if (srcDevice != currentDevice) {
+        allocate_();
+        checkCudaErrors(cudaMemcpyAsync(
+            this->data_, data, this->getDataMemSize(),
+            srcDevice == -1 ? cudaMemcpyHostToDevice : cudaMemcpyDeviceToDevice,
+            stream));
+      }
     }
   }
 };
-}
+}  // namespace curplsh
