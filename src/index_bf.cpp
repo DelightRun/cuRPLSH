@@ -1,6 +1,5 @@
 #include "index_bf.h"
 
-#include "copy.h"
 #include "internal/norm.h"
 #include "internal/search.h"
 
@@ -54,7 +53,7 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
   auto stream = resources_->getDefaultStream(device_);
 
   // toDevice & fromDevice
-  auto queries_ = toDevice<float, 2>(const_cast<float*>(queries), {num, dimension_},
+  auto queries_ = helper::toDevice<float, 2>(const_cast<float*>(queries), {num, dimension_},
                                      device_, stream);
 
   // To avoid unecessary mem copy, create an empty tensor if the given results ptr is
@@ -70,8 +69,8 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
                    true);
 
   // Copy back results if necessary
-  fromDevice<int, 2>(indices, indices_, stream);
-  fromDevice<float, 2>(distances, distances_, stream);
+  helper::fromDevice<int, 2>(indices, indices_, stream);
+  helper::fromDevice<float, 2>(distances, distances_, stream);
 }
 
 }  // namespace curplsh
