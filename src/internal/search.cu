@@ -173,7 +173,7 @@ void searchL2Distance(DeviceResources* resources,
                      -2.0f, 0.0f, resources->getBlasHandleCurrentDevice(),
                      streams[currentStream]);
 
-      if (baseTileSize = bases.getSize(0)) {
+      if (baseTileSize == bases.getSize(0)) {
         // If there's only 1 tile (i.e. number of bases less than tile size),
         // we directly write into final output
         l2Select(tileDistanceBufView, *basesNorm, distancesView, indicesView, k,
