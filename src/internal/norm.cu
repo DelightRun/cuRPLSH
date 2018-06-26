@@ -26,7 +26,7 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
   IndexT laneId = getLaneId();
   IndexT warpId = threadIdx.x / kWarpSize;  // Warp ID in block
 
-  IndexT dim = threadIdx.x / numVecsPerIter;
+  IndexT dim = threadIdx.x % (numWarpsPerVec * kWarpSize);
   IndexT idxOffset = blockIdx.x * BatchSize * numVecsPerIter;
 
   bool isLastBatch = (blockIdx.x == (gridDim.x - 1));
@@ -137,10 +137,11 @@ inline void computeL2Norm(const Tensor<TVec, 2, IndexT>& vectors,
 #define EXECUTE_L2_NORM_SPECIAL(DIM)                                      \
   do {                                                                    \
     constexpr IndexT dimLevel = kSuggestThreads / DIM;                    \
-    auto grid = dim3(divUp(vectors.getSize(0), BatchSize * dimLevel));    \
+    constexpr int batchSize = BatchSize / dimLevel;                       \
+    auto grid = dim3(divUp(vectors.getSize(0), batchSize * dimLevel));    \
     auto block = dim3(kSuggestThreads);                                   \
-    auto smem = sizeof(T) * BatchSize * dimLevel;                         \
-    kernelL2Norm<T, TVec, IndexT, BatchSize, dimLevel,                    \
+    auto smem = sizeof(T) * batchSize * dimLevel;                         \
+    kernelL2Norm<T, TVec, IndexT, batchSize, dimLevel,                    \
                  Squared><<<grid, block, smem, stream>>>(vectors, norms); \
   } while (0)
 
