@@ -21,20 +21,24 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
   // Get file size and compute data number
   file.seekg(0, std::ios::end);
   size_t filesize = (size_t)file.tellg();
-  num = (IndexT)((filesize - sizeof(IndexT)) / ((dim + 1) * sizeof(T)));
+  num = (IndexT)(filesize / (dim * sizeof(T) + sizeof(IndexT)));
   file.seekg(0, std::ios::beg);
 
   // Alloc memory and read
-  allocMemory((void**)&data, num * sizeof(T), space);
-  T* hostData = (space == MemorySpace::Unified) ? data : (T*)malloc(num * sizeof(T));
+  size_t vecsize = dim * sizeof(T);
+  size_t datasize = num * vecsize;
+  allocMemory((void**)&data, datasize, space);
+  T* hostData = (space == MemorySpace::Unified) ? data : (T*)malloc(datasize);
+  host_assert(hostData);
+
   for (IndexT i = 0; i < num; ++i) {
     file.seekg(4, std::ios::cur);
-    file.read((char*)(hostData + i * dim), dim * sizeof(T));
+    file.read((char*)(hostData + i * dim), vecsize);
   }
   file.close();
   if (space == MemorySpace::Device) {
-    checkCudaErrors(
-        cudaMemcpy(data, hostData, num * dim * sizeof(T), cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaMemcpy(data, hostData, datasize, cudaMemcpyHostToDevice));
+    free(hostData);
   }
 }
 
@@ -44,10 +48,11 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
 template <typename T, typename IndexT>
 class Dataset {
  public:
-  Dataset() : Dataset(0, 0, 0, 0, nullptr, nullptr, nullptr, "", MemorySpace::Device) {}
+  Dataset()
+      : Dataset(0, 0, 0, 0, nullptr, nullptr, nullptr, "", MemorySpace::Device) {}
 
-  Dataset(IndexT dimension, IndexT gtK, IndexT numBase, IndexT numQuery, T* base, T* query,
-          IndexT* gt, const char* name, MemorySpace space)
+  Dataset(IndexT dimension, IndexT gtK, IndexT numBase, IndexT numQuery, T* base,
+          T* query, IndexT* gt, const char* name, MemorySpace space)
       : dimension_(dimension),
         gtK_(gtK),
         numBase_(numBase),
@@ -138,11 +143,11 @@ class Dataset {
 };
 
 template <typename IndexT>
-class DatasetIrisa : Dataset<float, IndexT> {
+class DatasetIrisa : public Dataset<float, IndexT> {
  public:
   DatasetIrisa(const char* name, const char* datadir,
                MemorySpace space = MemorySpace::Device) {
-    this->name_ = "name";
+    this->name_ = name;
     this->space_ = space;
 
     std::string basedir(datadir);
@@ -156,13 +161,13 @@ class DatasetIrisa : Dataset<float, IndexT> {
     std::string queryfile(basedir + name + "_query.fvecs");
     helper::loadXvecsData<float, IndexT>(queryfile.c_str(), this->query_,
                                          this->numQuery_, this->dimension_, space);
-    std::string gtfile(basedir + name + "_groundtruth.fvecs");
+    std::string gtfile(basedir + name + "_groundtruth.ivecs");
     helper::loadXvecsData<IndexT, IndexT>(gtfile.c_str(), this->gt_, this->numQuery_,
                                           this->gtK_, space);
   }
 };
 
-class DatasetSIFT : DatasetIrisa<int> {
+class DatasetSIFT : public DatasetIrisa<int> {
  public:
   DatasetSIFT(const char* basedir, MemorySpace space = MemorySpace::Device)
       : DatasetIrisa<int>("sift", basedir, space) {}
