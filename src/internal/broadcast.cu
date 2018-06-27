@@ -5,6 +5,7 @@
 #include "internal/assertions.h"
 #include "internal/constants.h"
 #include "internal/math_utils.h"
+#include "internal/kernel_utils.cuh"
 #include "internal/reduction_ops.h"
 
 namespace curplsh {
@@ -21,12 +22,18 @@ __global__ void kernelBroadcastAlongRows(Tensor<T, 1> input,
     sval = input[row];
   }
 
+  __syncthreads();
+
   T val = sval;
+
   for (int i = threadIdx.x; i < output.getSize(1); i += blockDim.x) {
     // FIXME: speed up use atomicAdd?
+    /*
     TVec out = output[row][i];
     out += val;
     output[row][i] = out;
+    */
+    atomicAddT(&output[row][i], val);
   }
 }
 }

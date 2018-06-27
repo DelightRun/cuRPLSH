@@ -206,4 +206,26 @@ __device__ inline unsigned ballot(const int predicate) {
 
 __device__ inline unsigned activemask() { return __activemask(); }
 
+////////////////////////////////////////////////////////////////////////////////
+// Atomic Primitives for Vec types
+////////////////////////////////////////////////////////////////////////////////
+__device__ inline void atomicAddT(float* address, float val) {
+  ::atomicAdd(address, val);
+}
+__device__ inline void atomicAddT(float2* address, float val) {
+  ::atomicAdd(&address->x, val);
+  ::atomicAdd(&address->y, val);
+}
+__device__ inline void atomicAddT(float3* address, float val) {
+  ::atomicAdd(&address->x, val);
+  ::atomicAdd(&address->y, val);
+  ::atomicAdd(&address->z, val);
+}
+__device__ inline void atomicAddT(float4* address, float val) {
+  ::atomicAdd(&address->x, val);
+  ::atomicAdd(&address->y, val);
+  ::atomicAdd(&address->z, val);
+  ::atomicAdd(&address->w, val);
+}
+
 }  // namespace curplsh
