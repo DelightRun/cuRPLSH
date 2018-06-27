@@ -129,7 +129,7 @@ class Tensor {
     int srcDev = getDeviceForAddress(src.data());
     int dstDev = getDeviceForAddress(dst.data());
 
-    cudaMemcpyKind kind;
+    cudaMemcpyKind kind = cudaMemcpyDefault;
     if (srcDev == -1) {
       kind = dstDev == -1 ? cudaMemcpyHostToHost : cudaMemcpyHostToDevice;
     } else {
