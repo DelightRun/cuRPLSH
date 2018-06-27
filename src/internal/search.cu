@@ -198,7 +198,7 @@ void searchL2Distance(DeviceResources* resources,
 
     // Perform the final k-selection
     if (baseTileSize != bases.getSize(0)) {
-      adjustIndices(indicesBufQueryView, k, queryTileSize, streams[currentStream]);
+      adjustIndices(indicesBufQueryView, k, baseTileSize, streams[currentStream]);
       blockSelect(distancesBufQueryView, indicesBufQueryView, distancesView,
                   indicesView, k, false, streams[currentStream]);
     }
