@@ -23,6 +23,22 @@ inline MemorySpace getMemorySpace(T* ptr) {
 }
 
 /// Allocates CUDA memory
-void allocMemory(void** ptr, size_t size, MemorySpace space);
+template <typename T>
+inline void allocMemory(T*& ptr, size_t num, MemorySpace space) {
+  if (space == MemorySpace::Device) {
+    checkCudaErrors(cudaMalloc((void**)&ptr, num * sizeof(T)));
+  } else if (space == MemorySpace::Unified) {
+#ifdef UNIFIED_MEMORY
+    checkCudaErrors(cudaMallocManaged((void**)&ptr, num * sizeof(T)));
+#else
+    host_assert(false);
+#endif
+  }
+}
+
+template <typename T>
+inline void copyMemory(T* dst, T* src, size_t num, cudaMemcpyKind kind = cudaMemcpyDefault, cudaStream_t stream = 0) {
+  checkCudaErrors(cudaMemcpyAsync(dst, src, num * sizeof(T), kind, stream));
+}
 
 }  // namespace curplsh
