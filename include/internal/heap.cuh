@@ -14,11 +14,11 @@
 // Copyright 2004-present Facebook. All Rights Reserved.
 #pragma once
 
+#include "kernel_utils.cuh"
 #include "merge_network.cuh"
+#include "pair.cuh"
 #include "reductions.cuh"
 #include "tensor.h"
-#include "kernel_utils.cuh"
-#include "pair.cuh"
 
 namespace curplsh {
 
@@ -47,8 +47,8 @@ template <int NumThreads, typename K, typename V, int NumWarpQ, bool SelectMax,
 struct FinalBlockMerge<2, NumThreads, K, V, NumWarpQ, SelectMax, Comp> {
   static inline __device__ void merge(K* sharedK, V* sharedV) {
     // Final merge doesn't need to fully merge the second list
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax, Comp,
-               false>(sharedK, sharedV);
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax,
+               Comp, false>(sharedK, sharedV);
   }
 };
 
@@ -56,11 +56,11 @@ template <int NumThreads, typename K, typename V, int NumWarpQ, bool SelectMax,
           typename Comp>
 struct FinalBlockMerge<4, NumThreads, K, V, NumWarpQ, SelectMax, Comp> {
   static inline __device__ void merge(K* sharedK, V* sharedV) {
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax, Comp>(
-        sharedK, sharedV);
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax,
+               Comp>(sharedK, sharedV);
     // Final merge doesn't need to fully merge the second list
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 4), NumWarpQ * 2, !SelectMax,
-               Comp, false>(sharedK, sharedV);
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 4), NumWarpQ * 2,
+               !SelectMax, Comp, false>(sharedK, sharedV);
   }
 };
 
@@ -68,13 +68,13 @@ template <int NumThreads, typename K, typename V, int NumWarpQ, bool SelectMax,
           typename Comp>
 struct FinalBlockMerge<8, NumThreads, K, V, NumWarpQ, SelectMax, Comp> {
   static inline __device__ void merge(K* sharedK, V* sharedV) {
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax, Comp>(
-        sharedK, sharedV);
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 4), NumWarpQ * 2, !SelectMax,
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 2), NumWarpQ, !SelectMax,
                Comp>(sharedK, sharedV);
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 4), NumWarpQ * 2,
+               !SelectMax, Comp>(sharedK, sharedV);
     // Final merge doesn't need to fully merge the second list
-    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 8), NumWarpQ * 4, !SelectMax,
-               Comp, false>(sharedK, sharedV);
+    blockMerge<NumThreads, K, V, NumThreads / (kWarpSize * 8), NumWarpQ * 4,
+               !SelectMax, Comp, false>(sharedK, sharedV);
   }
 };
 
@@ -191,8 +191,8 @@ struct BlockHeap {
     // The warp queue is already sorted, and now that we've sorted the
     // per-thread queue, merge both sorted lists together, producing
     // one sorted list
-    warpMergeAnyRegisters<K, V, kNumWarpQRegisters, NumThreadQ, !SelectMax, Comp, false>(
-        warpKRegisters, warpVRegisters, threadK, threadV);
+    warpMergeAnyRegisters<K, V, kNumWarpQRegisters, NumThreadQ, !SelectMax, Comp,
+                          false>(warpKRegisters, warpVRegisters, threadK, threadV);
 
 // Write back out the warp queue
 #pragma unroll
@@ -223,8 +223,8 @@ struct BlockHeap {
     // All warp queues are contiguous in smem.
     // Now, we have kNumWarps lists of NumWarpQ elements.
     // This is a power of 2.
-    FinalBlockMerge<kNumWarps, ThreadsPerBlock, K, V, NumWarpQ, SelectMax, Comp>::merge(
-        sharedK, sharedV);
+    FinalBlockMerge<kNumWarps, ThreadsPerBlock, K, V, NumWarpQ, SelectMax,
+                    Comp>::merge(sharedK, sharedV);
 
     // The block-wide merge has a trailing syncthreads
   }
@@ -427,8 +427,8 @@ struct WarpHeap {
     // The warp queue is already sorted, and now that we've sorted the
     // per-thread queue, merge both sorted lists together, producing
     // one sorted list
-    warpMergeAnyRegisters<K, V, kNumWarpQRegisters, NumThreadQ, !SelectMax, Comp, false>(
-        warpK, warpV, threadK, threadV);
+    warpMergeAnyRegisters<K, V, kNumWarpQRegisters, NumThreadQ, !SelectMax, Comp,
+                          false>(warpK, warpV, threadK, threadV);
   }
 
   /// WARNING: all threads in a warp must participate in this.

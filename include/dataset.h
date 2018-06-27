@@ -5,6 +5,8 @@
 
 #include "memory_space.h"
 
+#include "internal/algorithms.h"
+
 namespace curplsh {
 
 namespace helper {
@@ -25,19 +27,19 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
   file.seekg(0, std::ios::beg);
 
   // Alloc memory and read
-  size_t vecsize = dim * sizeof(T);
-  size_t datasize = num * vecsize;
-  allocMemory((void**)&data, datasize, space);
-  T* hostData = (space == MemorySpace::Unified) ? data : (T*)malloc(datasize);
+  size_t numelems = num * dim;
+  allocMemory(data, numelems, space);
+  T* hostData =
+      (space == MemorySpace::Unified) ? data : (T*)malloc(numelems * sizeof(T));
   host_assert(hostData);
 
   for (IndexT i = 0; i < num; ++i) {
     file.seekg(4, std::ios::cur);
-    file.read((char*)(hostData + i * dim), vecsize);
+    file.read((char*)(hostData + i * dim), dim * sizeof(T));
   }
   file.close();
   if (space == MemorySpace::Device) {
-    checkCudaErrors(cudaMemcpy(data, hostData, datasize, cudaMemcpyHostToDevice));
+    copyMemory(data, hostData, numelems, cudaMemcpyHostToDevice);
     free(hostData);
   }
 }
@@ -48,6 +50,9 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
 template <typename T, typename IndexT>
 class Dataset {
  public:
+  typedef T DataType;
+  typedef IndexT IndexType;
+
   Dataset()
       : Dataset(0, 0, 0, 0, nullptr, nullptr, nullptr, "", MemorySpace::Device) {}
 
@@ -126,6 +131,25 @@ class Dataset {
 
   std::string getName() const { return name_; }
   MemorySpace getMemorySpace() const { return space_; }
+
+  virtual float evaluate(IndexT* indices, IndexT* diff = nullptr) const {
+    IndexT* intersection;
+    allocMemory(intersection, gtK_, space_);
+
+    float recall = 0.f;
+    for (IndexT i = 0; i < numQuery_; ++i) {
+      IndexT* result = indices + i * gtK_;
+      IndexT* groundtruth = gt_ + i * gtK_;
+      auto num = intersect(result, result + gtK_,            // Result
+                           groundtruth, groundtruth + gtK_,  // Ground Truth
+                           intersection);
+      recall += (num / (float)gtK_);
+      if (diff != nullptr) diff[i] = gtK_ - num;
+    }
+    recall /= numQuery_;
+
+    return recall;
+  }
 
  protected:
   IndexT dimension_;
