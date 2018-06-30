@@ -1,4 +1,4 @@
-#include "internal/matrix_multiply.h"
+#include "internal/matrix_ops.h"
 
 #include "internal/assertions.h"
 #include "internal/cuda_utils.h"
@@ -6,10 +6,10 @@
 namespace curplsh {
 
 template <typename T>
-void matrixMultiply(Tensor<T, 2>& c, bool transC,  // Matrix C
-                    Tensor<T, 2>& a, bool transA,  // Matrix A
-                    Tensor<T, 2>& b, bool transB,  // Matrix B
-                    float alpha, float beta,       // Coefficient alpha & beta
+void matrixMultiply(Tensor<T, 2>& c, bool transC,        // Matrix C
+                    const Tensor<T, 2>& a, bool transA,  // Matrix A
+                    const Tensor<T, 2>& b, bool transB,  // Matrix B
+                    float alpha, float beta,             // Coefficient alpha & beta
                     cublasHandle_t handle, cudaStream_t stream) {
   cublasSetStream(handle, stream);
 
@@ -59,13 +59,20 @@ void matrixMultiply(Tensor<T, 2>& c, bool transC,  // Matrix C
   getLastCudaError("Check CUDA error.");
 }
 
-void matrixMultiply(Tensor<float, 2>& c, bool transC,  // Matrix C
-                    Tensor<float, 2>& a, bool transA,  // Matrix A
-                    Tensor<float, 2>& b, bool transB,  // Matrix B
-                    float alpha, float beta,           // Coefficient alpha & beta
+void matrixMultiply(Tensor<float, 2>& c, bool transC,        // Matrix C
+                    const Tensor<float, 2>& a, bool transA,  // Matrix A
+                    const Tensor<float, 2>& b, bool transB,  // Matrix B
+                    float alpha, float beta,  // Coefficient alpha & beta
                     cublasHandle_t handle, cudaStream_t stream) {
   return matrixMultiply<float>(c, transC, a, transA, b, transB,  //
                                alpha, beta, handle, stream);
 }
 
-}   // namespace curplsh
+void matrixRandomInit(Tensor<float, 2>& matrix, float mean, float stddev,
+                      curandGenerator_t generator, unsigned long long seed) {
+  checkCudaErrors(curandSetPseudoRandomGeneratorSeed(generator, seed));
+  checkCudaErrors(curandGenerateNormal(generator, matrix.data(),
+                                       matrix.getNumElements(), mean, stddev));
+}
+
+}  // namespace curplsh
