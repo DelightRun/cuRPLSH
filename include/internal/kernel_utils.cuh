@@ -147,7 +147,7 @@ __forceinline__ __device__ void namedBarrierArrived(int name, int numThreads) {
 template <typename T>
 __device__ inline T shfl(const T val, int srcLane, int width = kWarpSize) {
 #if CUDA_VERSION >= 9000
-  return __shfl_sync(0xffffffffu, val, srcLane, width);
+  return __shfl_sync(kFullMask, val, srcLane, width);
 #else
   return __shfl(val, srcLane, width);
 #endif
@@ -156,7 +156,7 @@ __device__ inline T shfl(const T val, int srcLane, int width = kWarpSize) {
 template <typename T>
 __device__ inline T shfl_up(const T val, int delta, int width = kWarpSize) {
 #if CUDA_VERSION >= 9000
-  return __shfl_up_sync(0xffffffffu, val, delta, width);
+  return __shfl_up_sync(kFullMask, val, delta, width);
 #else
   return __shfl_up(val, delta, width);
 #endif
@@ -165,7 +165,7 @@ __device__ inline T shfl_up(const T val, int delta, int width = kWarpSize) {
 template <typename T>
 __device__ inline T shfl_down(const T val, int delta, int width = kWarpSize) {
 #if CUDA_VERSION >= 9000
-  return __shfl_down_sync(0xffffffffu, val, delta, width);
+  return __shfl_down_sync(kFullMask, val, delta, width);
 #else
   return __shfl_down(val, delta, width);
 #endif
@@ -174,7 +174,7 @@ __device__ inline T shfl_down(const T val, int delta, int width = kWarpSize) {
 template <typename T>
 __device__ inline T shfl_xor(const T val, int laneMask, int width = kWarpSize) {
 #if CUDA_VERSION >= 9000
-  return __shfl_xor_sync(0xffffffffu, val, laneMask, width);
+  return __shfl_xor_sync(kFullMask, val, laneMask, width);
 #else
   return __shfl_xor(val, laneMask, width);
 #endif
@@ -182,7 +182,7 @@ __device__ inline T shfl_xor(const T val, int laneMask, int width = kWarpSize) {
 
 __device__ inline int all(const int predicate) {
 #if CUDA_VERSION >= 9000
-  return __all_sync(0xffffffff, predicate);
+  return __all_sync(kFullMask, predicate);
 #else
   return __all(predicate);
 #endif
@@ -190,7 +190,7 @@ __device__ inline int all(const int predicate) {
 
 __device__ inline int any(const int predicate) {
 #if CUDA_VERSION >= 9000
-  return __any_sync(0xffffffff, predicate);
+  return __any_sync(kFullMask, predicate);
 #else
   return __any(predicate);
 #endif
@@ -198,7 +198,7 @@ __device__ inline int any(const int predicate) {
 
 __device__ inline unsigned ballot(const int predicate) {
 #if CUDA_VERSION >= 9000
-  return __ballot_sync(0xffffffff, predicate);
+  return __ballot_sync(kFullMask, predicate);
 #else
   return __ballot(predicate);
 #endif

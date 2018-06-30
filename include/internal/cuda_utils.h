@@ -26,9 +26,11 @@
 #include <unordered_map>
 #include <vector>
 
-#include <cublas_v2.h>
 #include <cuda.h>
 #include <cuda_runtime.h>
+
+#include <cublas_v2.h>
+#include <curand.h>
 
 #include "assertions.h"
 #include "string_utils.h"
