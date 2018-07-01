@@ -9,7 +9,7 @@
 #include "internal/broadcast.h"
 #include "internal/cuda_utils.h"
 #include "internal/kernel_utils.cuh"
-#include "internal/matrix_multiply.h"
+#include "internal/matrix_ops.h"
 #include "internal/norm.h"
 #include "internal/select.h"
 #include "internal/traits.h"
@@ -19,7 +19,8 @@ namespace curplsh {
 namespace {
 
 template <typename IndexT>
-__global__ void kernelAdjustIndex(Tensor<IndexT, 2> indices, int k, int increment) {
+__global__ void kernelAdjustIndex(Tensor<IndexT, 2, IndexT> indices, int k,
+                                  int increment) {
   for (IndexT i = threadIdx.x; i < k; i += blockDim.x) {
     // For each chunk of k indices, increase the indices by chunk * increment
     indices[blockIdx.y][blockIdx.x * k + i] += blockIdx.x * increment;
@@ -28,7 +29,7 @@ __global__ void kernelAdjustIndex(Tensor<IndexT, 2> indices, int k, int incremen
 
 // Used to adjust result indices since we use tiled distance computation algorithm
 template <typename IndexT>
-void adjustIndices(Tensor<IndexT, 2>& indices, int k, int increment,
+void adjustIndices(Tensor<IndexT, 2, IndexT>& indices, int k, int increment,
                    cudaStream_t stream) {
   host_assert(indices.getSize(1) % k == 0);
 
@@ -41,7 +42,8 @@ void adjustIndices(Tensor<IndexT, 2>& indices, int k, int increment,
 }
 
 template <typename T, typename IndexT, bool Transposed = false>
-inline Tensor<T, 2> sliceBases(const Tensor<T, 2>& data, IndexT start, IndexT num) {
+inline Tensor<T, 2> sliceBases(const Tensor<T, 2, IndexT>& data, IndexT start,
+                               IndexT num) {
   int axis = Transposed ? 1 : 0;
   if (start == 0 && num == data.getSize(axis)) {
     return data;
@@ -67,7 +69,7 @@ void chooseTileSize(const IndexT numQueries, const IndexT numBases, const IndexT
 
   targetUsage /= 2 * elementSize;
 
-  IndexT preferredTileQueries = dim <= 32 ? 1024 : 512;
+  IndexT preferredTileQueries = dim <= 1024 ? 1024 : 512;
 
   queryTileSize = std::min(preferredTileQueries, numQueries);
   baseTileSize = std::min(targetUsage / preferredTileQueries, numBases);
@@ -76,23 +78,24 @@ void chooseTileSize(const IndexT numQueries, const IndexT numBases, const IndexT
 
 template <typename T, typename IndexT>
 void searchL2Distance(DeviceResources* resources,
-                      const Tensor<T, 2>& bases,  // TODO basesTranspose
-                      Tensor<T, 1>* basesNorm, const Tensor<T, 2>& queries, IndexT k,
-                      Tensor<IndexT, 2>& indices, Tensor<T, 2>& distances,
-                      bool computeExactDistances) {
-  runtime_assert(distances.getSize(0) == queries.getSize(0));
-  runtime_assert(indices.getSize(0) == queries.getSize(0));
-  runtime_assert(distances.getSize(1) == k);
-  runtime_assert(indices.getSize(1) == k);
+                      const Tensor<T, 2, IndexT>& bases,  // TODO basesTranspose
+                      Tensor<T, 1, IndexT>* basesNorm,
+                      const Tensor<T, 2, IndexT>& queries, IndexT k,
+                      Tensor<IndexT, 2, IndexT>& indices,
+                      Tensor<T, 2, IndexT>& distances, bool computeExactDistances) {
+  host_assert(distances.getSize(0) == queries.getSize(0));
+  host_assert(indices.getSize(0) == queries.getSize(0));
+  host_assert(distances.getSize(1) == k);
+  host_assert(indices.getSize(1) == k);
 
   cudaStream_t defaultStream = resources->getDefaultStreamCurrentDevice();
 
   // Special Case
-  if (bases.getNumElements() == 0) {
+  if (bases.getSize(0) == 0) {
     thrust::fill(thrust::cuda::par.on(defaultStream), distances.data(),
                  distances.end(), NumericTraits<T>::max());
     thrust::fill(thrust::cuda::par.on(defaultStream), indices.data(), indices.end(),
-                 -1);
+                 (IndexT)-1);
     return;
   }
 
@@ -119,17 +122,18 @@ void searchL2Distance(DeviceResources* resources,
   host_assert(k <= 1024);  // Select Limitation
 
   // Tempory Output Memory
-  DeviceTensor<T, 2> tileDistanceBuf1({queryTileSize, baseTileSize});
-  DeviceTensor<T, 2> tileDistanceBuf2({queryTileSize, baseTileSize});
-  DeviceTensor<T, 2>* tileDistanceBufs[2] = {&tileDistanceBuf1, &tileDistanceBuf2};
+  DeviceTensor<T, 2, IndexT> tileDistanceBuf1({queryTileSize, baseTileSize});
+  DeviceTensor<T, 2, IndexT> tileDistanceBuf2({queryTileSize, baseTileSize});
+  DeviceTensor<T, 2, IndexT>* tileDistanceBufs[2] = {&tileDistanceBuf1,
+                                                     &tileDistanceBuf2};
 
-  DeviceTensor<T, 2> distancesBuf1({queryTileSize, numBaseTiles * k});
-  DeviceTensor<T, 2> distancesBuf2({queryTileSize, numBaseTiles * k});
-  DeviceTensor<T, 2>* distancesBufs[2] = {&distancesBuf1, &distancesBuf2};
+  DeviceTensor<T, 2, IndexT> distancesBuf1({queryTileSize, numBaseTiles * k});
+  DeviceTensor<T, 2, IndexT> distancesBuf2({queryTileSize, numBaseTiles * k});
+  DeviceTensor<T, 2, IndexT>* distancesBufs[2] = {&distancesBuf1, &distancesBuf2};
 
-  DeviceTensor<IndexT, 2> indicesBuf1({queryTileSize, numBaseTiles * k});
-  DeviceTensor<IndexT, 2> indicesBuf2({queryTileSize, numBaseTiles * k});
-  DeviceTensor<IndexT, 2>* indicesBufs[2] = {&indicesBuf1, &indicesBuf2};
+  DeviceTensor<IndexT, 2, IndexT> indicesBuf1({queryTileSize, numBaseTiles * k});
+  DeviceTensor<IndexT, 2, IndexT> indicesBuf2({queryTileSize, numBaseTiles * k});
+  DeviceTensor<IndexT, 2, IndexT>* indicesBufs[2] = {&indicesBuf1, &indicesBuf2};
 
   auto streams = resources->getAlternateStreamsCurrentDevice();
   streamWait(streams, {defaultStream});
@@ -138,7 +142,7 @@ void searchL2Distance(DeviceResources* resources,
 
   // Tile over the queries
   for (IndexT i = 0; i < queries.getSize(0); i += queryTileSize) {
-    IndexT currentNumQueries = min(queryTileSize, queries.getSize(0) - i);
+    IndexT currentNumQueries = std::min(queryTileSize, queries.getSize(0) - i);
 
     auto distancesView = distances.narrow(0, i, currentNumQueries);
     auto indicesView = indices.narrow(0, i, currentNumQueries);
@@ -153,7 +157,7 @@ void searchL2Distance(DeviceResources* resources,
 
     // Tile over the bases
     for (IndexT j = 0; j < bases.getSize(0); j += baseTileSize) {
-      IndexT currentNumBases = min(baseTileSize, bases.getSize(0) - j);
+      IndexT currentNumBases = std::min(baseTileSize, bases.getSize(0) - j);
 
       IndexT currentBaseTile = j / baseTileSize;  // index of current tile
 

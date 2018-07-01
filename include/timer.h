@@ -8,56 +8,64 @@
 namespace curplsh {
 
 namespace {
-inline void printTime(float time) {
-  printf("[INFO] %fms elapsed.\n", time);
+inline void printTime(const char* name, float time) {
+  printf("[INFO] %s: %fms elapsed.\n", name, time);
 }
 }
 
 class HostTimer {
  public:
-  HostTimer() : start_(clock::now()) {}
+  HostTimer() : HostTimer("") {}
+  HostTimer(const char* name) : name_(name), start_(clock::now()) {}
 
-  ~HostTimer() { elapsed<true>(); }
+  virtual ~HostTimer() { printTime(name_, elapsed()); }
 
-  template <bool Verbose = false>
-  inline float elapsed() const {
+  virtual inline float elapsed() const {
     float time =
         std::chrono::duration_cast<Millisecond>(clock::now() - start_).count();
-
-    if (Verbose) {
-      printTime(time);
-    }
 
     return time;
   }
 
- private:
+ protected:
   typedef std::chrono::duration<float, std::ratio<1, 1000>> Millisecond;
   typedef std::chrono::high_resolution_clock::time_point time_point;
   typedef std::chrono::high_resolution_clock clock;
 
+  const char* name_;
   time_point start_;
 };
 
-class DeviceTimer {
+class DeviceTimer : public HostTimer {
  public:
-  DeviceTimer() : startEvent_(0), stopEvent_(0), stream_(0) {
+   DeviceTimer() : HostTimer() {}
+   DeviceTimer(const char* name) : HostTimer(name) {}
+
+  inline float elapsed() const override {
+    cudaDeviceSynchronize();
+    return HostTimer::elapsed();
+  }
+};
+
+class CUDATimer {
+ public:
+  CUDATimer() : CUDATimer("") {}
+  CUDATimer(const char* name)
+      : name_(name), startEvent_(0), stopEvent_(0), stream_(0) {
     checkCudaErrors(cudaEventCreate(&startEvent_));
     checkCudaErrors(cudaEventCreate(&stopEvent_));
 
     checkCudaErrors(cudaEventRecord(startEvent_, stream_));
   }
 
-  ~DeviceTimer() {
+  ~CUDATimer() {
     elapsed<true>();
 
     checkCudaErrors(cudaEventDestroy(startEvent_));
     checkCudaErrors(cudaEventDestroy(stopEvent_));
   }
 
-  inline void start() {
-    checkCudaErrors(cudaEventRecord(startEvent_, stream_));
-  }
+  inline void start() { checkCudaErrors(cudaEventRecord(startEvent_, stream_)); }
 
   template <bool Verbose = false>
   inline float elapsed() const {
@@ -68,13 +76,15 @@ class DeviceTimer {
     checkCudaErrors(cudaEventElapsedTime(&time, startEvent_, stopEvent_));
 
     if (Verbose) {
-      printTime(time);
+      printTime(name_, time);
     }
 
     return time;
   }
 
  private:
+  const char* name_;
+
   cudaEvent_t startEvent_;
   cudaEvent_t stopEvent_;
   cudaStream_t stream_;  // TODO Currently we only use default stream
