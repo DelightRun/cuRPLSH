@@ -68,7 +68,7 @@ void matrixMultiply(Tensor<float, 2>& c, bool transC,        // Matrix C
                                alpha, beta, handle, stream);
 }
 
-void matrixRandomInit(Tensor<float, 2>& matrix, float mean, float stddev,
+void matrixRandomInitialize(Tensor<float, 2>& matrix, float mean, float stddev,
                       curandGenerator_t generator, unsigned long long seed) {
   checkCudaErrors(curandSetPseudoRandomGeneratorSeed(generator, seed));
   checkCudaErrors(curandGenerateNormal(generator, matrix.data(),

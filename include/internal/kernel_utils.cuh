@@ -87,6 +87,10 @@ __forceinline__ __device__ unsigned int setBitField(unsigned int val,
   return ret;
 }
 
+__device__ inline int popcnt(unsigned int x) { return __popc(x); }
+
+__device__ inline int popcnt(unsigned long long int x) { return __popcll(x); }
+
 ////////////////////////////////////////////////////////////////////////////////
 // Lane Utils
 ////////////////////////////////////////////////////////////////////////////////

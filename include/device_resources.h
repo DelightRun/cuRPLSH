@@ -43,10 +43,32 @@ class CublasHandleScope {
   cublasHandle_t handle_;
 };
 
+/// RAII object to mange curandGenerator_t
+class CurandGeneratorScope {
+ public:
+  CurandGeneratorScope() {
+    checkCudaErrors(curandCreateGenerator(&generator_, CURAND_RNG_PSEUDO_DEFAULT));
+  }
+  ~CurandGeneratorScope() { checkCudaErrors(curandDestroyGenerator(generator_)); }
+
+ private:
+  curandGenerator_t generator_;
+};
+
 /// Base class of GPU-side resource provider; hides provision of
 /// cuBLAS handles, CUDA streams and a temporary memory manager
 class DeviceResources {
  public:
+  DeviceResources() = default;
+
+  DeviceResources(int device) { initializeForDevice(device); }
+
+  DeviceResources(std::initializer_list<int> devices) {
+    for (auto device : devices) {
+      initializeForDevice(device);
+    }
+  }
+
   ~DeviceResources() {
     for (auto& entry : defaultStreams_) {
       DeviceScope scope(entry.first);
@@ -76,6 +98,12 @@ class DeviceResources {
       DeviceScope scope(entry.first);
 
       checkCudaErrors(cublasDestroy(entry.second));
+    }
+
+    for (auto& entry : randGenerators_) {
+      DeviceScope scope(entry.first);
+
+      checkCudaErrors(curandDestroyGenerator(entry.second));
     }
   }
 
@@ -127,6 +155,12 @@ class DeviceResources {
     checkCudaErrors(cublasCreate(&blasHandle));
     blasHandles_[device] = blasHandle;
 
+    // Create cuRand generator
+    curandGenerator_t randGenerator = 0;
+    checkCudaErrors(
+        curandCreateGenerator(&randGenerator, CURAND_RNG_PSEUDO_DEFAULT));
+    randGenerators_[device] = randGenerator;
+
     // TODO: memory manger stuff
   }
 
@@ -134,6 +168,12 @@ class DeviceResources {
   inline cublasHandle_t getBlasHandle(int device) {
     initializeForDevice(device);
     return blasHandles_[device];
+  }
+
+  /// Returns the cuRand generator that we use for the given device
+  inline curandGenerator_t getRandGenerator(int device) {
+    initializeForDevice(device);
+    return randGenerators_[device];
   }
 
   /// Returns the stream that we order all computation on for the
@@ -163,6 +203,10 @@ class DeviceResources {
   /// Calls getBlasHandle with the current device
   inline cublasHandle_t getBlasHandleCurrentDevice() {
     return getBlasHandle(getCurrentDevice());
+  }
+
+  inline curandGenerator_t getRandGeneratorCurrentDevice() {
+    return getRandGenerator(getCurrentDevice());
   }
 
   /// Calls getDefaultStream with the current device
@@ -211,6 +255,9 @@ class DeviceResources {
 
   /// cuBLAS handle for each device
   std::unordered_map<int, cublasHandle_t> blasHandles_;
+
+  /// cuRand generator for each device
+  std::unordered_map<int, curandGenerator_t> randGenerators_;
 
   // TODO: memory management stuff
 };
