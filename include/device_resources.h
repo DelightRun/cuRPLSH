@@ -124,7 +124,7 @@ class DeviceResources {
 
     // Cache device properties
     const auto& prop = getDeviceProperties(device);
-    host_assert(prop.major >= 6);
+    // TODO: host_assert(prop.major >= 6);
 
     // Create streams
     cudaStream_t defaultStream = 0;
