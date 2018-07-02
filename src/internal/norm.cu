@@ -12,29 +12,28 @@ namespace curplsh {
 
 namespace {
 
-template <typename T, typename TVec, typename IndexT, int BatchSize, int DimLevel,
+template <typename T, typename TVec, typename IndexT, int BatchSize, bool VeryHighDim,
           bool Squared>
 __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
                              Tensor<T, 1, IndexT> norms) {
   extern __shared__ char smemByte[];
   T* smem = (T*)smemByte;
 
-  IndexT numWarps = divUp(blockDim.x, kWarpSize);
-  IndexT numVecsPerIter = max(DimLevel, 1);
-  IndexT numWarpsPerVec = numWarps / numVecsPerIter;
+  IndexT numWarps = divUp(blockDim.x * blockDim.y, kWarpSize);
+  IndexT numWarpsPerVec = divUp(blockDim.x, kWarpSize);
 
   IndexT laneId = getLaneId();
-  IndexT warpId = threadIdx.x / kWarpSize;  // Warp ID in block
+  IndexT warpId = threadIdx.x / kWarpSize;
 
-  IndexT dim = threadIdx.x % (numWarpsPerVec * kWarpSize);
-  IndexT idxOffset = blockIdx.x * BatchSize * numVecsPerIter;
+  IndexT dim = threadIdx.x;
+  IndexT idxOffset = blockIdx.x * blockDim.y * BatchSize;
 
-  bool isLastBatch = (blockIdx.x == (gridDim.x - 1));
+  bool isLastBatch = ((vectors.getSize(0) - idxOffset) < BatchSize);
 
   T batchNorms[BatchSize];
 
   if (isLastBatch) {
-    int lastBatchSize = divUp(vectors.getSize(0) - idxOffset, numVecsPerIter);
+    int lastBatchSize = divUp(vectors.getSize(0) - idxOffset, blockDim.y);
 
     for (int idx = 0; idx < lastBatchSize; ++idx) {
       batchNorms[idx] = NumericTraits<T>::zero();
@@ -42,13 +41,13 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
 
     do {
       for (int idx = 0; idx < lastBatchSize; ++idx) {
-        IndexT realIdx = idxOffset + idx * numVecsPerIter + warpId / numWarpsPerVec;
+        IndexT realIdx = idxOffset + idx * blockDim.y + threadIdx.y;
         if (realIdx < vectors.getSize(0)) {
           TVec tmp = vectors[realIdx][dim];
           batchNorms[idx] += dot(tmp, tmp);
         }
       }
-    } while ((DimLevel < 0) && ((dim += blockDim.x) < vectors.getSize(1)));
+    } while (VeryHighDim && ((dim += blockDim.x) < vectors.getSize(1)));
 
     for (int idx = 0; idx < lastBatchSize; ++idx) {
       batchNorms[idx] = warpReduceSum<T>(batchNorms[idx]);
@@ -56,7 +55,8 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
 
     if (laneId == 0) {
       for (int idx = 0; idx < lastBatchSize; ++idx) {
-        smem[idx * numWarps + warpId] = batchNorms[idx];
+        smem[idx * numWarps + threadIdx.y * numWarpsPerVec + warpId] =
+            batchNorms[idx];
       }
     }
   } else {
@@ -70,8 +70,7 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
     do {
 #pragma unroll
       for (int idx = 0; idx < BatchSize; ++idx) {
-        tmp[idx] =
-            vectors[idxOffset + idx * numVecsPerIter + warpId / numWarpsPerVec][dim];
+        tmp[idx] = vectors[idxOffset + idx * blockDim.y + threadIdx.y][dim];
       }
 #pragma unroll
       for (int idx = 0; idx < BatchSize; ++idx) {
@@ -81,7 +80,7 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
       for (int idx = 0; idx < BatchSize; ++idx) {
         batchNorms[idx] += sumc(tmp[idx]);
       }
-    } while ((DimLevel < 0) && ((dim += blockDim.x) < vectors.getSize(1)));
+    } while (VeryHighDim && ((dim += blockDim.x) < vectors.getSize(1)));
 
 #pragma unroll
     for (int idx = 0; idx < BatchSize; ++idx) {
@@ -91,7 +90,8 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
     if (laneId == 0) {
 #pragma unroll
       for (int idx = 0; idx < BatchSize; ++idx) {
-        smem[idx * numWarps + warpId] = batchNorms[idx];
+        smem[idx * numWarps + threadIdx.y * numWarpsPerVec + warpId] =
+            batchNorms[idx];
       }
     }
   }
@@ -101,10 +101,10 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
   if ((warpId % numWarpsPerVec) == 0) {
 #pragma unroll
     for (int idx = 0; idx < BatchSize; ++idx) {
-      // batchNorms[idx] = laneId < numWarps ? smem[idx * numWarps + laneId]
-      batchNorms[idx] = laneId < numWarpsPerVec
-                            ? smem[idx * numWarps + warpId + laneId]
-                            : NumericTraits<T>::zero();
+      batchNorms[idx] =
+          laneId < numWarpsPerVec
+              ? smem[idx * numWarps + threadIdx.y * numWarpsPerVec + warpId + laneId]
+              : NumericTraits<T>::zero();
     }
 
 #pragma unroll
@@ -115,7 +115,7 @@ __global__ void kernelL2Norm(const Tensor<TVec, 2, IndexT> vectors,
     if (laneId == 0) {  // write out results
 #pragma unroll
       for (int idx = 0; idx < BatchSize; ++idx) {
-        IndexT realIdx = idxOffset + idx * numVecsPerIter + warpId / numWarpsPerVec;
+        IndexT realIdx = idxOffset + idx * blockDim.y + threadIdx.y;
         if (!isLastBatch || realIdx < norms.getSize(0)) {
           norms[realIdx] = Squared ? batchNorms[idx] : sqrt(batchNorms[idx]);
         }
@@ -136,21 +136,21 @@ inline void computeL2Norm(const Tensor<TVec, 2, IndexT>& vectors,
 
 #define EXECUTE_L2_NORM_SPECIAL(DIM)                                      \
   do {                                                                    \
-    constexpr IndexT dimLevel = kSuggestThreads / DIM;                    \
-    constexpr int batchSize = BatchSize / dimLevel;                       \
-    auto grid = dim3(divUp(vectors.getSize(0), batchSize * dimLevel));    \
-    auto block = dim3(kSuggestThreads);                                   \
-    auto smem = sizeof(T) * batchSize * dimLevel;                         \
-    kernelL2Norm<T, TVec, IndexT, batchSize, dimLevel,                    \
+    constexpr IndexT vecsPerBlock = kSuggestThreads / DIM;                    \
+    constexpr int batchSize = BatchSize / vecsPerBlock;                       \
+    auto grid = dim3(divUp(vectors.getSize(0), batchSize * vecsPerBlock));    \
+    auto block = dim3(DIM, vecsPerBlock);                                     \
+    auto smem = sizeof(T) * batchSize * vecsPerBlock;                         \
+    kernelL2Norm<T, TVec, IndexT, batchSize, false,                    \
                  Squared><<<grid, block, smem, stream>>>(vectors, norms); \
   } while (0)
 
-#define EXECUTE_L2_NORM(NUM_THREAD, DIM_LEVEL)                            \
+#define EXECUTE_L2_NORM(DIM, VERY_HIGH_DIM)                                   \
   do {                                                                    \
     auto grid = dim3(divUp(vectors.getSize(0), BatchSize));               \
-    auto block = dim3(NUM_THREAD);                                        \
-    auto smem = sizeof(T) * BatchSize * (NUM_THREAD / kWarpSize);         \
-    kernelL2Norm<T, TVec, IndexT, BatchSize, DIM_LEVEL,                   \
+    auto block = dim3(DIM);                                               \
+    auto smem = sizeof(T) * BatchSize * (DIM / kWarpSize);                \
+    kernelL2Norm<T, TVec, IndexT, BatchSize, VERY_HIGH_DIM,                   \
                  Squared><<<grid, block, smem, stream>>>(vectors, norms); \
   } while (0)
 
@@ -161,9 +161,9 @@ inline void computeL2Norm(const Tensor<TVec, 2, IndexT>& vectors,
   } else if (dim == 128) {
     EXECUTE_L2_NORM_SPECIAL(128);
   } else if (dim > kMaxThreadsPerBlock) {
-    EXECUTE_L2_NORM(kMaxThreadsPerBlock, -1);
+    EXECUTE_L2_NORM(kMaxThreadsPerBlock, true);
   } else {
-    EXECUTE_L2_NORM(dim, 1);
+    EXECUTE_L2_NORM(dim, false);
   }
 }
 
