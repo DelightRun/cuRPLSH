@@ -59,7 +59,7 @@ __global__ void kernelL2Distance(Tensor<TVec, 2, IndexT> queries,
   IndexT dimension = queries.getSize(1);  // TODO: VeryHighDim
   IndexT numCandidates = idsLists.getSize(1);
 
-  IndexT queryId = blockIdx.y * blockDim.y + threadIdx.y;
+  IndexT queryId = blockIdx.x * blockDim.x + threadIdx.y;
   IndexT currentDim = threadIdx.x;
 
   if (queryId >= queries.getSize(0)) return;
@@ -114,6 +114,7 @@ void computeL2Distance(const Tensor<T, 2, IndexT>& queries,
     auto smem = sizeof(T) * block.x * block.y / kWarpSize;                        \
     kernelL2Distance<T, TVec, IndexT><<<grid, block, smem, stream>>>(             \
         QUERIES, BASES, basesNorm, idsLists, products);                           \
+    cudaDeviceSynchronize();                                                      \
   } while (0)
 
   if (std::is_same<T, float>::value) {
@@ -422,11 +423,10 @@ void searchHammingDistance(DeviceResources* resources,
 
   numCandidates = std::max(numCandidates, k);
 
-  printf("numCandidates = %d\n", numCandidates);
-
   IndexT queryTileSize, baseTileSize;
   chooseTileSize(queries.getSize(0), bases.getSize(0), sizeof(CodeT), queryTileSize,
                  baseTileSize);
+  printf("queryTileSize = %d\n", queryTileSize);
 
   IndexT numBaseTiles = divUp(bases.getSize(0), baseTileSize);
 
