@@ -13,6 +13,13 @@ void blockSelect(const Tensor<float, 2>& inK,  //
                  bool selectMax,               // select largest/smallest value
                  cudaStream_t stream);
 
+void blockSelect(const Tensor<unsigned, 2>& inK,  //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
+                 cudaStream_t stream);
+
 /// Blockwise K-Selection with given indices/labels.
 /// Use the given indices/labels to produce results.
 void blockSelect(const Tensor<float, 2>& inK,  // input values
@@ -21,6 +28,14 @@ void blockSelect(const Tensor<float, 2>& inK,  // input values
                  Tensor<int, 2>& outV,         // output indices
                  int k,                        // K
                  bool selectMax,               // select largest/smallest value
+                 cudaStream_t stream);
+
+void blockSelect(const Tensor<unsigned, 2>& inK,  //
+                 const Tensor<int, 2>& inV,       //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
                  cudaStream_t stream);
 
 /// Blockwise Radix Selection without given indices/labels.

@@ -384,18 +384,18 @@ void blockSelect(const Tensor<T, 2, IndexT>& in, Tensor<T, 2, IndexT>& outK,
   auto initK = selecMax ? NumericTraits<T>::min() : NumericTraits<T>::max();
   auto initV = -1;
 
-#define EXECUTE_BLOCK_SELECT(WARP_Q, NUM_NUM_THREAD_Q)                   \
-  do {                                                                   \
-    if (selecMax) {                                                      \
-      kernelBlockSelect<T, IndexT, true, WARP_Q, NUM_NUM_THREAD_Q,       \
-                        kBlockSelectNumThreads>                          \
-          <<<grid, block, 0, stream>>>(in, outK, outV, initK, initV, k); \
-    } else {                                                             \
-      kernelBlockSelect<T, IndexT, false, WARP_Q, NUM_NUM_THREAD_Q,      \
-                        kBlockSelectNumThreads>                          \
-          <<<grid, block, 0, stream>>>(in, outK, outV, initK, initV, k); \
-    }                                                                    \
-    getLastCudaError("Check CUDA error");                                \
+#define EXECUTE_BLOCK_SELECT(WARP_Q, NUM_NUM_THREAD_Q)                       \
+  do {                                                                       \
+    if (selecMax) {                                                          \
+      kernelBlockSelect<T, IndexT, true, WARP_Q, NUM_NUM_THREAD_Q,           \
+                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
+          in, outK, outV, initK, initV, k);                                  \
+    } else {                                                                 \
+      kernelBlockSelect<T, IndexT, false, WARP_Q, NUM_NUM_THREAD_Q,          \
+                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
+          in, outK, outV, initK, initV, k);                                  \
+    }                                                                        \
+    getLastCudaError("Check CUDA error");                                    \
   } while (0)
 
   if (k == 1) {
@@ -434,18 +434,18 @@ void blockSelect(const Tensor<T, 2, IndexT>& inK,
   auto initK = selecMax ? NumericTraits<T>::min() : NumericTraits<T>::max();
   auto initV = -1;
 
-#define EXECUTE_BLOCK_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                         \
-  do {                                                                         \
-    if (selecMax) {                                                            \
-      kernelBlockSelect<T, IndexT, true, NUM_WARP_Q, NUM_THREAD_Q,             \
-                        kBlockSelectNumThreads>                                \
-          <<<grid, block, 0, stream>>>(inK, inV, outK, outV, initK, initV, k); \
-    } else {                                                                   \
-      kernelBlockSelect<T, IndexT, false, NUM_WARP_Q, NUM_THREAD_Q,            \
-                        kBlockSelectNumThreads>                                \
-          <<<grid, block, 0, stream>>>(inK, inV, outK, outV, initK, initV, k); \
-    }                                                                          \
-    getLastCudaError("Check CUDA error");                                      \
+#define EXECUTE_BLOCK_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                       \
+  do {                                                                       \
+    if (selecMax) {                                                          \
+      kernelBlockSelect<T, IndexT, true, NUM_WARP_Q, NUM_THREAD_Q,           \
+                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
+          inK, inV, outK, outV, initK, initV, k);                            \
+    } else {                                                                 \
+      kernelBlockSelect<T, IndexT, false, NUM_WARP_Q, NUM_THREAD_Q,          \
+                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
+          inK, inV, outK, outV, initK, initV, k);                            \
+    }                                                                        \
+    getLastCudaError("Check CUDA error");                                    \
   } while (0)
 
   if (k == 1) {
@@ -481,13 +481,13 @@ void radixSelect(const Tensor<T, 2, IndexT> inK, Tensor<T, 2, IndexT> outK,
   auto block = dim3(std::min(numThreads, kMaxThreadsPerBlock));
   auto grid = dim3(inK.getSize(0));
 
-#define EXECUTE_RADIX_SELECT(RADIX_BITS)                  \
-  if (selectMax) {                                        \
-    kernelRadixSelect<T, IndexT, true, 2>                 \
-        <<<grid, block, 0, stream>>>(inK, outK, outV, k); \
-  } else {                                                \
-    kernelRadixSelect<T, IndexT, false, 2>                \
-        <<<grid, block, 0, stream>>>(inK, outK, outV, k); \
+#define EXECUTE_RADIX_SELECT(RADIX_BITS)                                          \
+  if (selectMax) {                                                                \
+    kernelRadixSelect<T, IndexT, true, 2><<<grid, block, 0, stream>>>(inK, outK,  \
+                                                                      outV, k);   \
+  } else {                                                                        \
+    kernelRadixSelect<T, IndexT, false, 2><<<grid, block, 0, stream>>>(inK, outK, \
+                                                                       outV, k);  \
   }
 
   EXECUTE_RADIX_SELECT(2);
@@ -511,13 +511,13 @@ void radixSelect(const Tensor<T, 2, IndexT> inK, const Tensor<IndexT, 2, IndexT>
   auto block = dim3(std::min(numThreads, kMaxThreadsPerBlock));
   auto grid = dim3(inK.getSize(0));
 
-#define EXECUTE_RADIX_SELECT(RADIX_BITS)                       \
-  if (selectMax) {                                             \
-    kernelRadixSelect<T, IndexT, true, 2>                      \
-        <<<grid, block, 0, stream>>>(inK, inV, outK, outV, k); \
-  } else {                                                     \
-    kernelRadixSelect<T, IndexT, false, 2>                     \
-        <<<grid, block, 0, stream>>>(inK, inV, outK, outV, k); \
+#define EXECUTE_RADIX_SELECT(RADIX_BITS)                                \
+  if (selectMax) {                                                      \
+    kernelRadixSelect<T, IndexT, true, 2><<<grid, block, 0, stream>>>(  \
+        inK, inV, outK, outV, k);                                       \
+  } else {                                                              \
+    kernelRadixSelect<T, IndexT, false, 2><<<grid, block, 0, stream>>>( \
+        inK, inV, outK, outV, k);                                       \
   }
 
   EXECUTE_RADIX_SELECT(2);
@@ -543,21 +543,22 @@ void l2Select(const Tensor<T, 2, IndexT>& productDistances,
     auto block = dim3(kThreadsPerBlock);
     auto grid = dim3(divUp(distances.getSize(0), kRowsPerBlock));
 
-    kernelL2Select1<T, IndexT, kRowsPerBlock, kThreadsPerBlock>
-        <<<grid, block, 0, stream>>>(productDistances, baseNorms, distances,
-                                     indices);
+    kernelL2Select1<T, IndexT, kRowsPerBlock,
+                    kThreadsPerBlock><<<grid, block, 0, stream>>>(
+        productDistances, baseNorms, distances, indices);
   } else {
     constexpr int kThreadsPerBlock = 128;
 
     auto block = dim3(kThreadsPerBlock);
     auto grid = dim3(distances.getSize(0));
 
-#define EXECUTE_L2_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                          \
-  do {                                                                       \
-    kernelL2SelectK<T, IndexT, NUM_WARP_Q, NUM_THREAD_Q, kThreadsPerBlock>   \
-        <<<grid, block, 0, stream>>>(productDistances, baseNorms, distances, \
-                                     indices, k, NumericTraits<T>::max());   \
-    getLastCudaError("Check CUDA error");                                    \
+#define EXECUTE_L2_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                \
+  do {                                                             \
+    kernelL2SelectK<T, IndexT, NUM_WARP_Q, NUM_THREAD_Q,           \
+                    kThreadsPerBlock><<<grid, block, 0, stream>>>( \
+        productDistances, baseNorms, distances, indices, k,        \
+        NumericTraits<T>::max());                                  \
+    getLastCudaError("Check CUDA error");                          \
   } while (0)
 
     if (k <= 32) {
@@ -596,6 +597,25 @@ void blockSelect(const Tensor<float, 2>& inK,  //
                  bool selectMax,               //
                  cudaStream_t stream) {
   blockSelect<float, int>(inK, inV, outK, outV, k, selectMax, stream);
+}
+
+void blockSelect(const Tensor<unsigned, 2>& inK,  //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
+                 cudaStream_t stream) {
+  blockSelect<unsigned, int>(inK, outK, outV, k, selectMax, stream);
+}
+
+void blockSelect(const Tensor<unsigned, 2>& inK,  //
+                 const Tensor<int, 2>& inV,       //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
+                 cudaStream_t stream) {
+  blockSelect<unsigned, int>(inK, inV, outK, outV, k, selectMax, stream);
 }
 
 void radixSelect(const Tensor<unsigned, 2>& inK,  //
