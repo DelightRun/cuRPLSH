@@ -1,13 +1,13 @@
-add_subdirectory(googletest)
+# add_subdirectory(googletest)
 
-include_directories(googletest/googletest/include)
+# include_directories(googletest/googletest/include)
 include_directories(${PROJECT_SOURCE_DIR}/include)
 
-FILE(GLOB TEST_FILES src/*.cpp)
-set(SOURCE_FILES test_all.cpp ${TEST_FILES})
+# FILE(GLOB TEST_FILES src/*.cpp)
+#set(SOURCE_FILES test_all.cpp ${TEST_FILES})
 
-add_executable(test_all ${SOURCE_FILES})
-target_link_libraries(test_all curplsh gtest_main)
+# add_executable(test_all ${SOURCE_FILES})
+# target_link_libraries(test_all curplsh gtest_main)
 
 add_executable(test_norm test_norm.cpp)
 target_link_libraries(test_norm curplsh)
@@ -15,4 +15,10 @@ target_link_libraries(test_norm curplsh)
 add_executable(test_search test_search.cpp)
 target_link_libraries(test_search curplsh)
 
-add_test(NAME tests COMMAND test_all)
+add_executable(test_lsh test_lsh.cpp)
+target_link_libraries(test_lsh curplsh)
+
+cuda_add_executable(test_radix test_radix.cu)
+target_link_libraries(test_radix curplsh)
+
+# add_test(NAME tests COMMAND test_all)

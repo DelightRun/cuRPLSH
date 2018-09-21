@@ -165,6 +165,9 @@ inline void computeL2Norm(const Tensor<TVec, 2, IndexT>& vectors,
   } else {
     EXECUTE_L2_NORM(dim, false);
   }
+
+#undef EXECUTE_L2_NORM
+#undef EXECUTE_L2_NORM_SPECIAL
 }
 
 template <typename T, typename TVec>

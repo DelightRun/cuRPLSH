@@ -21,6 +21,7 @@ struct DefaultPtrTraits {
 //////////////////////////////////////////////////////////////////////////////
 //                             Math Type Traits                             //
 //////////////////////////////////////////////////////////////////////////////
+// FIXME: Make vec type constexpr
 template <typename T>
 struct NumericTraits {
 };
@@ -28,10 +29,10 @@ struct NumericTraits {
 // floatV
 template <>
 struct NumericTraits<float> {
-  __host__ __device__ static inline float zero() { return 0.f; }
-  __host__ __device__ static inline float identity() { return 1.f; }
-  __host__ __device__ static inline float min() { return kFloatMin; }
-  __host__ __device__ static inline float max() { return kFloatMax; }
+  __host__ __device__ static constexpr inline float zero() { return 0.f; }
+  __host__ __device__ static constexpr inline float identity() { return 1.f; }
+  __host__ __device__ static constexpr inline float min() { return kFloatMin; }
+  __host__ __device__ static constexpr inline float max() { return kFloatMax; }
 };
 
 template <>
@@ -61,10 +62,10 @@ struct NumericTraits<float4> {
 // intV
 template <>
 struct NumericTraits<int> {
-  __host__ __device__ static inline int zero() { return 0; }
-  __host__ __device__ static inline int identity() { return 1; }
-  __host__ __device__ static inline int min() { return kIntMin; }
-  __host__ __device__ static inline int max() { return kIntMax; }
+  __host__ __device__ static constexpr inline int zero() { return 0; }
+  __host__ __device__ static constexpr inline int identity() { return 1; }
+  __host__ __device__ static constexpr inline int min() { return kIntMin; }
+  __host__ __device__ static constexpr inline int max() { return kIntMax; }
 };
 
 template <>
@@ -94,10 +95,10 @@ struct NumericTraits<int4> {
 // uintV
 template <>
 struct NumericTraits<uint> {
-  __host__ __device__ static inline uint zero() { return 0; }
-  __host__ __device__ static inline uint identity() { return 1; }
-  __host__ __device__ static inline uint min() { return kUintMin; }
-  __host__ __device__ static inline uint max() { return kUintMax; }
+  __host__ __device__ static constexpr inline uint zero() { return 0; }
+  __host__ __device__ static constexpr inline uint identity() { return 1; }
+  __host__ __device__ static constexpr inline uint min() { return kUintMin; }
+  __host__ __device__ static constexpr inline uint max() { return kUintMax; }
 };
 
 template <>

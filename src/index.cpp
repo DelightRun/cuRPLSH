@@ -7,6 +7,7 @@ namespace curplsh {
 
 Index::Index(DeviceResources* resources, int dimension, IndexConfig config)
     : dimension_(dimension),
+      numData_(0),
       resources_(resources),
       memorySpace_(config.memorySpace),
       device_(config.device) {

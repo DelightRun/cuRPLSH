@@ -6,7 +6,8 @@
 namespace curplsh {
 
 struct IndexBFConfig : public IndexConfig {
-  IndexBFConfig() : storeTransposed(false), computeExactDistances(false) {}
+  IndexBFConfig(bool storeTrans = false, bool computeExactDist = false)
+      : storeTransposed(storeTrans), computeExactDistances(computeExactDist) {}
 
   /// Whether or not data is stored (transparently) in a transposed layout.
   /// This will speedup GEMM (~10% faster), but substantially will slow down
@@ -23,7 +24,7 @@ class IndexBF : public Index {
   IndexBF(DeviceResources* resources, int dim,
           IndexBFConfig config = IndexBFConfig());
 
-  ~IndexBF() override;
+  ~IndexBF() override = default;
 
   void train(int num, const float* data) override;
 

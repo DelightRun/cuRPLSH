@@ -143,6 +143,7 @@ class Dataset {
       auto num = intersect(result, result + gtK_,            // Result
                            groundtruth, groundtruth + gtK_,  // Ground Truth
                            intersection);
+      if (num) printf("#%d: %d\n", i, num);
       recall += (num / (float)gtK_);
       if (diff != nullptr) diff[i] = gtK_ - num;
     }

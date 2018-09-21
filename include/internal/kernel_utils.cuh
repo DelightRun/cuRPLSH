@@ -81,15 +81,11 @@ __forceinline__ __device__ unsigned int setBitField(unsigned int val,
                                                     unsigned int bits, int pos,
                                                     int len) {
   unsigned int ret;
-  asm("bfi.u32 %0, %1, %2, %3, %4;"
+  asm("bfi.b32 %0, %1, %2, %3, %4;"
       : "=r"(ret)
       : "r"(bits), "r"(val), "r"(pos), "r"(len));
   return ret;
 }
-
-__device__ inline int popcnt(unsigned int x) { return __popc(x); }
-
-__device__ inline int popcnt(unsigned long long int x) { return __popcll(x); }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Lane Utils
@@ -146,7 +142,7 @@ __forceinline__ __device__ void namedBarrierArrived(int name, int numThreads) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Warp Primitives
+// Primitives
 ////////////////////////////////////////////////////////////////////////////////
 template <typename T>
 __device__ inline T shfl(const T val, int srcLane, int width = kWarpSize) {
@@ -209,6 +205,19 @@ __device__ inline unsigned ballot(const int predicate) {
 }
 
 __device__ inline unsigned activemask() { return __activemask(); }
+
+__device__ inline int popcnt(unsigned int x) { return __popc(x); }
+
+__device__ inline int popcnt(unsigned long long int x) { return __popcll(x); }
+
+template <typename T>
+__device__ inline T ldg(T* data) {
+#if __CUDA_ARCH__ >= 350
+  return ldg(data);
+#else
+  return *data;
+#endif
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Atomic Primitives for Vec types

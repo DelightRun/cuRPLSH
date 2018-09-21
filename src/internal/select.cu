@@ -1,9 +1,10 @@
 #include "internal/select.h"
 
 #include "internal/heap.cuh"
-#include "internal/reductions.cuh"
 #include "internal/kernel_utils.cuh"
 #include "internal/pair.cuh"
+#include "internal/radix.cuh"
+#include "internal/reductions.cuh"
 
 namespace curplsh {
 
@@ -12,9 +13,10 @@ namespace {
 // BlockSelect without indices/labels, use sequential indices implicitly
 template <typename T, typename IndexT, bool SelectMax, int NumWarpQ, int NumThreadQ,
           int ThreadsPerBlock>
-__global__ void kernelBlockSelect(const Tensor<T, 2> in, Tensor<T, 2> outK,
-                                  Tensor<IndexT, 2> outV, T initK, IndexT initV,
-                                  IndexT k) {
+__global__ void kernelBlockSelect(Tensor<T, 2, IndexT> inK,
+                                  Tensor<T, 2, IndexT> outK,
+                                  Tensor<IndexT, 2, IndexT> outV, T initK,
+                                  IndexT initV, IndexT k) {
   constexpr int kNumWarps = ThreadsPerBlock / kWarpSize;
 
   __shared__ T smemK[kNumWarps * NumWarpQ];
@@ -28,9 +30,9 @@ __global__ void kernelBlockSelect(const Tensor<T, 2> in, Tensor<T, 2> outK,
   IndexT row = blockIdx.x;
 
   IndexT i = threadIdx.x;
-  T* inStart = in[row][i].data();
+  T* inStart = inK[row][i].data();
 
-  IndexT limit = roundDown(in.getSize(1), kWarpSize);
+  IndexT limit = roundDown(inK.getSize(1), kWarpSize);
 
   for (; i < limit; i += ThreadsPerBlock) {
     heap.add(*inStart, i);
@@ -38,7 +40,7 @@ __global__ void kernelBlockSelect(const Tensor<T, 2> in, Tensor<T, 2> outK,
   }
 
   // Handle last remainder fraction of a warp of elements
-  if (i < in.getSize(1)) {
+  if (i < inK.getSize(1)) {
     heap.addThreadQ(*inStart, i);
   }
 
@@ -54,8 +56,10 @@ __global__ void kernelBlockSelect(const Tensor<T, 2> in, Tensor<T, 2> outK,
 // BlockSelect with given indices/labels
 template <typename T, typename IndexT, bool SelectMax, int NumWarpQ, int NumThreadQ,
           int ThreadsPerBlock>
-__global__ void kernelBlockSelect(Tensor<T, 2> inK, Tensor<IndexT, 2> inV,
-                                  Tensor<T, 2> outK, Tensor<IndexT, 2> outV, T initK,
+__global__ void kernelBlockSelect(Tensor<T, 2, IndexT> inK,
+                                  Tensor<IndexT, 2, IndexT> inV,
+                                  Tensor<T, 2, IndexT> outK,
+                                  Tensor<IndexT, 2, IndexT> outV, T initK,
                                   IndexT initV, IndexT k) {
   constexpr int kNumWarps = ThreadsPerBlock / kWarpSize;
 
@@ -95,14 +99,151 @@ __global__ void kernelBlockSelect(Tensor<T, 2> inK, Tensor<IndexT, 2> inV,
   }
 }
 
+// RadixSelect without given indices/labels
+template <typename T, typename IndexT, bool SelectMax, int RadixBits>
+__global__ void kernelRadixSelect(Tensor<T, 2, IndexT> inK,
+                                  Tensor<T, 2, IndexT> outK,
+                                  Tensor<IndexT, 2, IndexT> outV, IndexT k) {
+  constexpr T Identity =
+      SelectMax ? NumericTraits<T>::min() : NumericTraits<T>::max();
+
+  __shared__ int smem[kWarpSize];
+  __shared__ IndexT idxOffset;
+
+  if (threadIdx.x == 0) {
+    idxOffset = 0;
+  }
+  __syncthreads();
+
+  IndexT row = blockIdx.x;
+
+  // Step 1. Select k-th small/large value
+  T kthValue = radixSelectKthElement<T, IndexT, SelectMax, RadixBits>(
+      inK[row].data(), inK.getSize(1), k, smem);
+
+  IndexT numRoundedUp = roundUp(inK.getSize(1), (IndexT)blockDim.x);
+
+  // Step 2. Filter all data, output those greater/less than k-th
+  for (IndexT i = threadIdx.x; i < numRoundedUp; i += blockDim.x) {
+    bool isInRange = i < inK.getSize(1);
+    T value = isInRange ? inK[row][i].ldg() : Identity;
+
+    bool hasTopK;
+    if (SelectMax) {
+      hasTopK = isInRange && (value > kthValue);
+    } else {
+      hasTopK = isInRange && (value < kthValue);
+    }
+
+    /*
+    int index, carry;
+    // FIXME: Exclusive Scan vs atomicAdd
+    */
+
+    if (hasTopK) {
+      IndexT idx = atomicAdd(&idxOffset, 1);
+      outK[row][idx] = value;
+      outV[row][idx] = i;
+    }
+
+    __syncthreads();
+  }
+
+  // Step 3. Filter all data, output those are equal to k-th
+  for (IndexT i = threadIdx.x; i < numRoundedUp; i += blockDim.x) {
+    bool isInRange = i < inK.getSize(1);
+    T value = isInRange ? inK[row][i].ldg() : NumericTraits<T>::zero();
+    bool hasTopK = isInRange && (value == kthValue);
+
+    if (hasTopK) {
+      IndexT idx = atomicAdd(&idxOffset, 1);
+      if (idx >= k) break;
+      outK[row][idx] = value;
+      outV[row][idx] = i;
+    }
+
+    __syncthreads();
+  }
+}
+
+template <typename T, typename IndexT, bool SelectMax, int RadixBits>
+__global__ void kernelRadixSelect(Tensor<T, 2, IndexT> inK,
+                                  Tensor<IndexT, 2, IndexT> inV,
+                                  Tensor<T, 2, IndexT> outK,
+                                  Tensor<IndexT, 2, IndexT> outV, IndexT k) {
+  __shared__ int smem[kWarpSize];
+  __shared__ IndexT idxOffset;
+
+  if (threadIdx.x == 0) {
+    idxOffset = 0;
+  }
+  __syncthreads();
+
+  IndexT row = blockIdx.x;
+
+  // Step 1. Select k-th small/large value
+  T kthValue = radixSelectKthElement<T, IndexT, SelectMax, RadixBits>(
+      inK[row].data(), inK.getSize(1), k, smem);
+
+  IndexT numRoundedUp = roundUp(inK.getSize(1), (IndexT)blockDim.x);
+
+  // Step 2. Filter all data, output those greater/less than k-th
+  for (IndexT i = threadIdx.x; i < numRoundedUp; i += blockDim.x) {
+    bool isInRange = i < inK.getSize(1);
+
+    T value = isInRange ? inK[row][i].ldg() : NumericTraits<T>::zero();
+    IndexT index = isInRange ? inV[row][i].ldg() : (IndexT)-1;
+
+    bool hasTopK;
+    if (SelectMax) {
+      hasTopK = isInRange && (value > kthValue);
+    } else {
+      hasTopK = isInRange && (value < kthValue);
+    }
+
+    /*
+    int index, carry;
+    // FIXME: Exclusive Scan vs atomicAdd
+    */
+
+    if (hasTopK) {
+      IndexT idx = atomicAdd(&idxOffset, 1);
+      outK[row][idx] = value;
+      outV[row][idx] = index;
+    }
+    __syncthreads();
+  }
+
+  // Step 3. Filter all data, output those are equal to k-th
+  runtime_assert(outV.getSize(1) >= idxOffset);
+  for (IndexT i = threadIdx.x; i < numRoundedUp; i += blockDim.x) {
+    bool isInRange = i < inK.getSize(1);
+
+    T value = isInRange ? inK[row][i].ldg() : NumericTraits<T>::zero();
+    IndexT index = isInRange ? inV[row][i].ldg() : (IndexT)-1;
+
+    bool hasTopK = isInRange && (value == kthValue);
+
+    if (hasTopK) {
+      IndexT idx = atomicAdd(&idxOffset, 1);
+      if (idx >= k) break;
+      outK[row][idx] = value;
+      outV[row][idx] = index;
+    }
+    __syncthreads();
+  }
+}
+
 // Speical K-Selection implementation for L2 distance with k == 1
 template <typename T, typename IndexT, int kRowsPerBlock, int kBlockSize>
-__global__ void kernelL2Select1(const Tensor<T, 2> productDistances,
-                                const Tensor<T, 1> baseNorms, Tensor<T, 2> distances,
-                                Tensor<IndexT, 2> indices) {
+__global__ void kernelL2Select1(Tensor<T, 2, IndexT> productDistances,
+                                Tensor<T, 1, IndexT> baseNorms,
+                                Tensor<T, 2, IndexT> distances,
+                                Tensor<IndexT, 2, IndexT> indices) {
   // Each block handles kRowsPerBlock rows of the distances (results)
-  Pair<T, IndexT> threadMin[kRowsPerBlock];
   __shared__ Pair<T, IndexT> blockMin[kRowsPerBlock * (kBlockSize / kWarpSize)];
+
+  Pair<T, IndexT> threadMin[kRowsPerBlock];
 
   T distance[kRowsPerBlock];
 
@@ -188,9 +329,11 @@ __global__ void kernelL2Select1(const Tensor<T, 2> productDistances,
 // Speical K-Selection implementation for L2 distance with arbitrary k
 template <typename T, typename IndexT, int NumWarpQ, int NumThreadQ,
           int ThreadsPerBlock>
-__global__ void kernelL2SelectK(const Tensor<T, 2> productDistances,
-                                const Tensor<T, 1> baseNorms, Tensor<T, 2> distances,
-                                Tensor<IndexT, 2> indices, IndexT k, T initK) {
+__global__ void kernelL2SelectK(Tensor<T, 2, IndexT> productDistances,
+                                Tensor<T, 1, IndexT> baseNorms,
+                                Tensor<T, 2, IndexT> distances,
+                                Tensor<IndexT, 2, IndexT> indices, IndexT k,
+                                T initK) {
   // Each block handles a single row of the distances (results)
   constexpr int kNumWarps = ThreadsPerBlock / kWarpSize;
 
@@ -226,8 +369,9 @@ __global__ void kernelL2SelectK(const Tensor<T, 2> productDistances,
 }  // namespace
 
 template <typename T, typename IndexT>
-void blockSelect(const Tensor<T, 2>& in, Tensor<T, 2>& outK, Tensor<IndexT, 2>& outV,
-                 IndexT k, bool selecMax, cudaStream_t stream) {
+void blockSelect(const Tensor<T, 2, IndexT>& in, Tensor<T, 2, IndexT>& outK,
+                 Tensor<IndexT, 2, IndexT>& outV, IndexT k, bool selecMax,
+                 cudaStream_t stream) {
   constexpr int kBlockSelectNumThreads = 128;
 
   host_assert(outK.isSameSizes(outV));
@@ -240,18 +384,18 @@ void blockSelect(const Tensor<T, 2>& in, Tensor<T, 2>& outK, Tensor<IndexT, 2>& 
   auto initK = selecMax ? NumericTraits<T>::min() : NumericTraits<T>::max();
   auto initV = -1;
 
-#define EXECUTE_BLOCK_SELECT(WARP_Q, NUM_NUM_THREAD_Q)                       \
-  do {                                                                       \
-    if (selecMax) {                                                          \
-      kernelBlockSelect<T, IndexT, true, WARP_Q, NUM_NUM_THREAD_Q,           \
-                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
-          in, outK, outV, initK, initV, k);                                  \
-    } else {                                                                 \
-      kernelBlockSelect<T, IndexT, false, WARP_Q, NUM_NUM_THREAD_Q,          \
-                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
-          in, outK, outV, initK, initV, k);                                  \
-    }                                                                        \
-    getLastCudaError("Check CUDA error");                                    \
+#define EXECUTE_BLOCK_SELECT(WARP_Q, NUM_NUM_THREAD_Q)                   \
+  do {                                                                   \
+    if (selecMax) {                                                      \
+      kernelBlockSelect<T, IndexT, true, WARP_Q, NUM_NUM_THREAD_Q,       \
+                        kBlockSelectNumThreads>                          \
+          <<<grid, block, 0, stream>>>(in, outK, outV, initK, initV, k); \
+    } else {                                                             \
+      kernelBlockSelect<T, IndexT, false, WARP_Q, NUM_NUM_THREAD_Q,      \
+                        kBlockSelectNumThreads>                          \
+          <<<grid, block, 0, stream>>>(in, outK, outV, initK, initV, k); \
+    }                                                                    \
+    getLastCudaError("Check CUDA error");                                \
   } while (0)
 
   if (k == 1) {
@@ -273,8 +417,9 @@ void blockSelect(const Tensor<T, 2>& in, Tensor<T, 2>& outK, Tensor<IndexT, 2>& 
 }
 
 template <typename T, typename IndexT>
-void blockSelect(Tensor<T, 2>& inK, const Tensor<IndexT, 2>& inV, Tensor<T, 2>& outK,
-                 Tensor<IndexT, 2>& outV, IndexT k, bool selecMax,
+void blockSelect(const Tensor<T, 2, IndexT>& inK,
+                 const Tensor<IndexT, 2, IndexT>& inV, Tensor<T, 2, IndexT>& outK,
+                 Tensor<IndexT, 2, IndexT>& outV, IndexT k, bool selecMax,
                  cudaStream_t stream) {
   constexpr int kBlockSelectNumThreads = 128;
 
@@ -289,18 +434,18 @@ void blockSelect(Tensor<T, 2>& inK, const Tensor<IndexT, 2>& inV, Tensor<T, 2>& 
   auto initK = selecMax ? NumericTraits<T>::min() : NumericTraits<T>::max();
   auto initV = -1;
 
-#define EXECUTE_BLOCK_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                       \
-  do {                                                                       \
-    if (selecMax) {                                                          \
-      kernelBlockSelect<T, IndexT, true, NUM_WARP_Q, NUM_THREAD_Q,           \
-                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
-          inK, inV, outK, outV, initK, initV, k);                            \
-    } else {                                                                 \
-      kernelBlockSelect<T, IndexT, false, NUM_WARP_Q, NUM_THREAD_Q,          \
-                        kBlockSelectNumThreads><<<grid, block, 0, stream>>>( \
-          inK, inV, outK, outV, initK, initV, k);                            \
-    }                                                                        \
-    getLastCudaError("Check CUDA error");                                    \
+#define EXECUTE_BLOCK_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                         \
+  do {                                                                         \
+    if (selecMax) {                                                            \
+      kernelBlockSelect<T, IndexT, true, NUM_WARP_Q, NUM_THREAD_Q,             \
+                        kBlockSelectNumThreads>                                \
+          <<<grid, block, 0, stream>>>(inK, inV, outK, outV, initK, initV, k); \
+    } else {                                                                   \
+      kernelBlockSelect<T, IndexT, false, NUM_WARP_Q, NUM_THREAD_Q,            \
+                        kBlockSelectNumThreads>                                \
+          <<<grid, block, 0, stream>>>(inK, inV, outK, outV, initK, initV, k); \
+    }                                                                          \
+    getLastCudaError("Check CUDA error");                                      \
   } while (0)
 
   if (k == 1) {
@@ -321,11 +466,69 @@ void blockSelect(Tensor<T, 2>& inK, const Tensor<IndexT, 2>& inV, Tensor<T, 2>& 
 #undef EXECUTE_BLOCK_SELECT
 }
 
+template <typename T, typename IndexT>
+void radixSelect(const Tensor<T, 2, IndexT> inK, Tensor<T, 2, IndexT> outK,
+                 Tensor<IndexT, 2, IndexT> outV, IndexT k, bool selectMax,
+                 cudaStream_t stream) {
+  host_assert(inK.getSize(0) == outK.getSize(0));
+  host_assert(outK.getSize(0) == outV.getSize(0));
+  host_assert(outK.getSize(1) == outV.getSize(1));
+  host_assert(outK.getSize(1) == k);
+
+  // FIXME: special case - k == 1
+  int numThreads = roundUp(k, kWarpSize);
+
+  auto block = dim3(std::min(numThreads, kMaxThreadsPerBlock));
+  auto grid = dim3(inK.getSize(0));
+
+#define EXECUTE_RADIX_SELECT(RADIX_BITS)                  \
+  if (selectMax) {                                        \
+    kernelRadixSelect<T, IndexT, true, 2>                 \
+        <<<grid, block, 0, stream>>>(inK, outK, outV, k); \
+  } else {                                                \
+    kernelRadixSelect<T, IndexT, false, 2>                \
+        <<<grid, block, 0, stream>>>(inK, outK, outV, k); \
+  }
+
+  EXECUTE_RADIX_SELECT(2);
+#undef EXECUTE_RADIX_SELECT
+}
+
+template <typename T, typename IndexT>
+void radixSelect(const Tensor<T, 2, IndexT> inK, const Tensor<IndexT, 2, IndexT> inV,
+                 Tensor<T, 2, IndexT> outK, Tensor<IndexT, 2, IndexT> outV, IndexT k,
+                 bool selectMax, cudaStream_t stream) {
+  host_assert(inK.getSize(0) == inV.getSize(0));
+  host_assert(inK.getSize(1) == inV.getSize(1));
+  host_assert(inK.getSize(0) == outK.getSize(0));
+  host_assert(outK.getSize(0) == outV.getSize(0));
+  host_assert(outK.getSize(1) == outV.getSize(1));
+  host_assert(outV.getSize(1) == k);
+
+  // FIXME: special case - k == 1
+  int numThreads = roundUp(k, kWarpSize);
+
+  auto block = dim3(std::min(numThreads, kMaxThreadsPerBlock));
+  auto grid = dim3(inK.getSize(0));
+
+#define EXECUTE_RADIX_SELECT(RADIX_BITS)                       \
+  if (selectMax) {                                             \
+    kernelRadixSelect<T, IndexT, true, 2>                      \
+        <<<grid, block, 0, stream>>>(inK, inV, outK, outV, k); \
+  } else {                                                     \
+    kernelRadixSelect<T, IndexT, false, 2>                     \
+        <<<grid, block, 0, stream>>>(inK, inV, outK, outV, k); \
+  }
+
+  EXECUTE_RADIX_SELECT(2);
+#undef EXECUTE_RADIX_SELECT
+}
+
 // FIXME: specialization for TVec types
 template <typename T, typename IndexT>
-void l2Select(Tensor<T, 2> productDistances, const Tensor<T, 1> baseNorms,
-              Tensor<T, 2> distances, Tensor<IndexT, 2> indices, IndexT k,
-              cudaStream_t stream) {
+void l2Select(const Tensor<T, 2, IndexT>& productDistances,
+              const Tensor<T, 1, IndexT>& baseNorms, Tensor<T, 2, IndexT>& distances,
+              Tensor<IndexT, 2, IndexT>& indices, IndexT k, cudaStream_t stream) {
   host_assert(productDistances.getSize(0) == distances.getSize(0));
   host_assert(productDistances.getSize(0) == indices.getSize(0));
   host_assert(productDistances.getSize(1) == baseNorms.getSize(0));
@@ -340,22 +543,21 @@ void l2Select(Tensor<T, 2> productDistances, const Tensor<T, 1> baseNorms,
     auto block = dim3(kThreadsPerBlock);
     auto grid = dim3(divUp(distances.getSize(0), kRowsPerBlock));
 
-    kernelL2Select1<T, IndexT, kRowsPerBlock,
-                    kThreadsPerBlock><<<grid, block, 0, stream>>>(
-        productDistances, baseNorms, distances, indices);
+    kernelL2Select1<T, IndexT, kRowsPerBlock, kThreadsPerBlock>
+        <<<grid, block, 0, stream>>>(productDistances, baseNorms, distances,
+                                     indices);
   } else {
     constexpr int kThreadsPerBlock = 128;
 
     auto block = dim3(kThreadsPerBlock);
     auto grid = dim3(distances.getSize(0));
 
-#define EXECUTE_L2_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                \
-  do {                                                             \
-    kernelL2SelectK<T, IndexT, NUM_WARP_Q, NUM_THREAD_Q,           \
-                    kThreadsPerBlock><<<grid, block, 0, stream>>>( \
-        productDistances, baseNorms, distances, indices, k,        \
-        NumericTraits<T>::max());                                  \
-    getLastCudaError("Check CUDA error");                          \
+#define EXECUTE_L2_SELECT(NUM_WARP_Q, NUM_THREAD_Q)                          \
+  do {                                                                       \
+    kernelL2SelectK<T, IndexT, NUM_WARP_Q, NUM_THREAD_Q, kThreadsPerBlock>   \
+        <<<grid, block, 0, stream>>>(productDistances, baseNorms, distances, \
+                                     indices, k, NumericTraits<T>::max());   \
+    getLastCudaError("Check CUDA error");                                    \
   } while (0)
 
     if (k <= 32) {
@@ -377,30 +579,49 @@ void l2Select(Tensor<T, 2> productDistances, const Tensor<T, 1> baseNorms,
 #undef EXECUTE_L2_SELECT
 }
 
-void blockSelect(Tensor<float, 2>& in,    //
-                 Tensor<float, 2>& outK,  //
-                 Tensor<int, 2>& outV,    //
-                 int k,                   //
-                 bool selectMax,          //
+void blockSelect(const Tensor<float, 2>& inK,  //
+                 Tensor<float, 2>& outK,       //
+                 Tensor<int, 2>& outV,         //
+                 int k,                        //
+                 bool selectMax,               //
                  cudaStream_t stream) {
-  blockSelect<float, int>(in, outK, outV, k, selectMax, stream);
+  blockSelect<float, int>(inK, outK, outV, k, selectMax, stream);
 }
 
-void blockSelect(Tensor<float, 2>& inK,   //
-                 Tensor<int, 2>& inV,     //
-                 Tensor<float, 2>& outK,  //
-                 Tensor<int, 2>& outV,    //
-                 int k,                   //
-                 bool selectMax,          //
+void blockSelect(const Tensor<float, 2>& inK,  //
+                 const Tensor<int, 2>& inV,    //
+                 Tensor<float, 2>& outK,       //
+                 Tensor<int, 2>& outV,         //
+                 int k,                        //
+                 bool selectMax,               //
                  cudaStream_t stream) {
   blockSelect<float, int>(inK, inV, outK, outV, k, selectMax, stream);
 }
 
-void l2Select(Tensor<float, 2>& productDistances,  //
-              Tensor<float, 1>& baseNorms,         //
-              Tensor<float, 2>& distances,         //
-              Tensor<int, 2>& indices,             //
-              int k,                               //
+void radixSelect(const Tensor<unsigned, 2>& inK,  //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
+                 cudaStream_t stream) {
+  radixSelect<unsigned, int>(inK, outK, outV, k, selectMax, stream);
+}
+
+void radixSelect(const Tensor<unsigned, 2>& inK,  //
+                 const Tensor<int, 2>& inV,       //
+                 Tensor<unsigned, 2>& outK,       //
+                 Tensor<int, 2>& outV,            //
+                 int k,                           //
+                 bool selectMax,                  //
+                 cudaStream_t stream) {
+  radixSelect<unsigned, int>(inK, inV, outK, outV, k, selectMax, stream);
+}
+
+void l2Select(const Tensor<float, 2>& productDistances,  //
+              const Tensor<float, 1>& baseNorms,         //
+              Tensor<float, 2>& distances,               //
+              Tensor<int, 2>& indices,                   //
+              int k,                                     //
               cudaStream_t stream) {
   l2Select<float, int>(productDistances, baseNorms, distances, indices, k, stream);
 }

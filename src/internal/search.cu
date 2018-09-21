@@ -136,6 +136,7 @@ void searchL2Distance(DeviceResources* resources,
   DeviceTensor<IndexT, 2, IndexT>* indicesBufs[2] = {&indicesBuf1, &indicesBuf2};
 
   auto streams = resources->getAlternateStreamsCurrentDevice();
+  // cudaStream_t streams[2] = {defaultStream, defaultStream};
   streamWait(streams, {defaultStream});
 
   int currentStream = 0;

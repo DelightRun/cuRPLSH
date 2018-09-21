@@ -2,6 +2,7 @@
 
 #include "device_resources.h"
 #include "memory_space.h"
+#include "tensor.h"
 
 namespace curplsh {
 
@@ -19,7 +20,7 @@ class Index {
  public:
   Index(DeviceResources* resources, int dimension, IndexConfig config);
 
-  virtual ~Index();
+  virtual ~Index() = default;
 
   /** Perform training on representative set of vectors.
    *
@@ -65,8 +66,8 @@ class Index {
 
  protected:
   const int dimension_;  ///< data dimension
-  int numData_;        ///< data number
-  bool verbose_;   ///< verbose flag
+  int numData_;          ///< data number
+  bool verbose_;         ///< verbose flag
 
   /// true if the index doesn't require training, or the training is done
   bool isTrained_;

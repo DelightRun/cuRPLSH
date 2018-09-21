@@ -10,6 +10,8 @@ set(CUDA_SOURCE_FILES
   internal/matrix_ops.cu
   internal/search.cu
   internal/select.cu
+  internal/build_lsh.cu
+  internal/search_lsh.cu
 )
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
