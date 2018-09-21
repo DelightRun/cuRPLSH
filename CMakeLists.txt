@@ -26,11 +26,13 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
+
 add_subdirectory(src)
 
 if (BuildTest)
   enable_testing()
-  add_subdirectory(test)
+  add_subdirectory(tests)
 endif()
 
 if (BuildBench)
