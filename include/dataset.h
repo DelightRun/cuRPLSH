@@ -12,8 +12,8 @@ namespace curplsh {
 namespace helper {
 
 template <typename T, typename IndexT>
-void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
-                   MemorySpace space) {
+T* loadXvecsData(const char* filename, IndexT& num, IndexT& dim,
+                 MemorySpace space = MemorySpace::Host) {
   std::ifstream file(filename, std::ios::binary);
   host_assert(file.is_open());
 
@@ -27,10 +27,11 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
   file.seekg(0, std::ios::beg);
 
   // Alloc memory and read
-  size_t numelems = num * dim;
-  allocMemory(data, numelems, space);
-  T* hostData =
-      (space == MemorySpace::Unified) ? data : (T*)malloc(numelems * sizeof(T));
+  size_t numElems = num * dim;
+  T *data, *hostData;
+  allocMemory(data, numElems, space);
+  hostData =
+      (space == MemorySpace::Device) ? new T[numElems] : data;
   host_assert(hostData);
 
   for (IndexT i = 0; i < num; ++i) {
@@ -38,10 +39,12 @@ void loadXvecsData(const char* filename, T*& data, IndexT& num, IndexT& dim,
     file.read((char*)(hostData + i * dim), dim * sizeof(T));
   }
   file.close();
+
   if (space == MemorySpace::Device) {
-    copyMemory(data, hostData, numelems, cudaMemcpyHostToDevice);
-    free(hostData);
+    copyMemory(data, hostData, numElems, cudaMemcpyHostToDevice);
+    delete[] hostData;
   }
+  return data;
 }
 
 // TODO: saveXvecsData
@@ -133,22 +136,23 @@ class Dataset {
   MemorySpace getMemorySpace() const { return space_; }
 
   virtual float evaluate(IndexT* indices, IndexT* diff = nullptr) const {
-    IndexT* intersection;
-    allocMemory(intersection, gtK_, space_);
+    IndexT* hindices = new IndexT[numQuery_ * gtK_];
+    copyMemory(hindices, indices, numQuery_ * gtK_);
 
     float recall = 0.f;
     for (IndexT i = 0; i < numQuery_; ++i) {
-      IndexT* result = indices + i * gtK_;
+      IndexT* result = hindices + i * gtK_;
       IndexT* groundtruth = gt_ + i * gtK_;
-      auto num = intersect(result, result + gtK_,            // Result
-                           groundtruth, groundtruth + gtK_,  // Ground Truth
-                           intersection);
-      if (num) printf("#%d: %d\n", i, num);
+      int num = 0;
+      for (int p = 0; p < gtK_; ++p)
+        for (int q = 0; q < gtK_; ++q)
+          if (result[p] == groundtruth[q]) ++num;
       recall += (num / (float)gtK_);
       if (diff != nullptr) diff[i] = gtK_ - num;
     }
     recall /= numQuery_;
 
+    delete[] hindices;
     return recall;
   }
 
@@ -181,14 +185,14 @@ class DatasetIrisa : public Dataset<float, IndexT> {
     }
 
     std::string basefile(basedir + name + "_base.fvecs");
-    helper::loadXvecsData<float, IndexT>(basefile.c_str(), this->base_,
-                                         this->numBase_, this->dimension_, space);
+    this->base_ = helper::loadXvecsData<float, IndexT>(
+        basefile.c_str(), this->numBase_, this->dimension_, space);
     std::string queryfile(basedir + name + "_query.fvecs");
-    helper::loadXvecsData<float, IndexT>(queryfile.c_str(), this->query_,
-                                         this->numQuery_, this->dimension_, space);
+    this->query_ = helper::loadXvecsData<float, IndexT>(
+        queryfile.c_str(), this->numQuery_, this->dimension_, space);
     std::string gtfile(basedir + name + "_groundtruth.ivecs");
-    helper::loadXvecsData<IndexT, IndexT>(gtfile.c_str(), this->gt_, this->numQuery_,
-                                          this->gtK_, space);
+    this->gt_ = helper::loadXvecsData<IndexT, IndexT>(gtfile.c_str(),
+                                                      this->numQuery_, this->gtK_);
   }
 };
 
