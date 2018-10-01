@@ -64,6 +64,7 @@ __global__ void kernelL2Distance(Tensor<TVec, 2, IndexT> queries,
 
   if (queryId >= queries.getSize(0)) return;
 
+  // TODO: unroll
   TVec qval = queries[queryId][currentDim];
 
   for (IndexT i = 0; i < numCandidates; ++i) {
@@ -129,95 +130,6 @@ void computeL2Distance(const Tensor<T, 2, IndexT>& queries,
   } else {
     EXECUTE_L2_DISTANCE(T, queries, bases);
   }
-}
-
-template <typename T, typename DistT, typename IndexT>
-__global__ void kernelHammingWithBinarizationFull(
-    Tensor<T, 2, IndexT> queriesProjection, Tensor<unsigned, 2, IndexT> basesCode,
-    Tensor<DistT, 2, IndexT> distances) {
-  /*
-  extern __shared__ char tileAByte[];
-  extern __shared__ char tileBByte[];
-  unsigned* tileA = (unsigned*)tileAByte;
-  unsigned* tileB = (unsigned*)tileBByte;
-  */
-  // TODO: Dynamic Allocated
-  __shared__ unsigned tileA[32 * 33];
-  __shared__ unsigned tileB[32 * 33];
-
-  IndexT threadId = threadIdx.y * blockDim.x + threadIdx.x;
-  IndexT laneId = getLaneId();
-
-  IndexT numBits = blockDim.x * 32;
-  IndexT smemStride = blockDim.x + 1;
-
-  IndexT row, col;
-
-  // Step 1. Binarization
-  row = threadId / numBits;
-  col = threadId % numBits;
-
-  IndexT idxOffset = blockIdx.y * blockDim.y;
-
-  IndexT stride = (blockDim.x * blockDim.y) / numBits;
-  IndexT num = min(blockDim.y, queriesProjection.getSize(0) - idxOffset);
-
-  for (int i = row; i < num; i += stride) {
-    T proj = queriesProjection[idxOffset + i][col];
-    bool vote = proj > 0;
-    unsigned code = ballot(vote);
-    if (laneId == 0) {
-      tileA[i * smemStride + col / kWarpSize] = code;
-      printf("%08X\t", code);
-    }
-  }
-
-  row = blockIdx.y * blockDim.y + threadIdx.y;
-  col = blockIdx.x * blockDim.x + threadIdx.x;
-
-  // tileB[threadIdx.y * numTables + threadIdx.x] = basesCode[col][threadIdx.x];
-  tileB[threadIdx.y * smemStride + threadIdx.x] = basesCode[col][threadIdx.x];
-
-  __syncthreads();
-
-  // Step 2. Hamming Distance Computation
-  if ((row >= distances.getSize(0)) || (col >= distances.getSize(1))) return;
-
-  DistT dist = 0;
-  for (int i = 0; i < blockDim.x; ++i) {
-    dist += popcnt(tileA[threadIdx.y * smemStride + i] ^
-                   tileB[threadIdx.x * smemStride + i]);
-  }
-  // printf("dist(%d, %d) = %d\n", row, col, dist);
-  distances[row][col] = dist;
-}
-
-template <typename T, typename CodeT, typename DistT, typename IndexT,
-          int BatchSize = 8>
-void computeHammingWithBinarizationFull(
-    const Tensor<T, 2, IndexT>& queriesProjection,
-    const Tensor<CodeT, 2, IndexT>& basesCode, Tensor<DistT, 2, IndexT>& distances,
-    cudaStream_t stream) {
-  host_assert(distances.getSize(0) == queriesProjection.getSize(0));
-  host_assert(distances.getSize(1) == basesCode.getSize(0));
-  host_assert(queriesProjection.getSize(1) ==
-              basesCode.getSize(1) * sizeof(CodeT) * 8);
-  host_assert(basesCode.template isCastable<unsigned>());
-
-  auto basesCodeCasted = basesCode.template cast<unsigned>();
-
-  auto block = dim3(basesCodeCasted.getSize(1),
-                    kMaxThreadsPerBlock / basesCodeCasted.getSize(1));
-  // auto block = dim3(32, 32);
-  auto grid = dim3(divUp(basesCode.getSize(0), block.y),
-                   divUp(queriesProjection.getSize(0), block.y));
-  // auto grid = dim3(32, 32);
-
-  // auto smem = 2 * sizeof(unsigned) * block.x * block.y;
-
-  // TODO: This is too slow
-  kernelHammingWithBinarizationFull<<<grid, block, 0, stream>>>(
-      queriesProjection, basesCodeCasted, distances);
 }
 
 /* Binarization + Hamming */
@@ -286,18 +198,18 @@ void binarize(const Tensor<T, 2, IndexT> projections,
                                              codebook.template cast<unsigned>());
 }
 
-template <typename CodeT, typename DistT, typename IndexT>
+template <typename CodeT, typename DistT, typename IndexT, int TileSize = 32>
 __global__ void kernelHammingDistance(Tensor<CodeT, 2, IndexT> queriesCode,
                                       Tensor<CodeT, 2, IndexT> basesCode,
                                       Tensor<DistT, 2, IndexT> distances) {
-  __shared__ CodeT tileA[32][32];
-  __shared__ CodeT tileB[32][32];
+  // TODO: arbitrary code length, use template specilization
+  __shared__ CodeT tileA[TileSize][TileSize];
+  __shared__ CodeT tileB[TileSize][TileSize];
 
   IndexT row = blockIdx.y * blockDim.y + threadIdx.y;
   IndexT col = blockIdx.x * blockDim.x + threadIdx.x;
 
   // TODO: multiple tiles
-
   if (row < distances.getSize(0)) {
     tileA[threadIdx.y][threadIdx.x] = queriesCode[row][threadIdx.x];
   }
@@ -306,15 +218,6 @@ __global__ void kernelHammingDistance(Tensor<CodeT, 2, IndexT> queriesCode,
   }
 
   __syncthreads();
-
-  /* TODO: Debug
-  if (row == 0 && col == 0) {
-    for (int i = 0; i < 32; ++i) {
-      for (int j = 0; j < 32; ++j) printf("%08X ", tileB[i][j]);
-      printf("\n");
-    }
-  }
-  */
 
   if ((row >= distances.getSize(0)) || (col >= distances.getSize(1))) return;
 
@@ -362,7 +265,7 @@ void chooseTileSize(const IndexT numQueries, const IndexT numBases,
   } else if (globalMem <= (static_cast<size_t>(8)) * 1024 * 1024 * 1024) {
     targetUsage = 768 * 1024 * 1024;
   } else {
-    //targetUsage = 1024 * 1024 * 1024;
+    // targetUsage = 1024 * 1024 * 1024;
   }
 
   targetUsage /= 2 * elementSize;
@@ -517,16 +420,11 @@ void searchHammingDistance(DeviceResources* resources,
                                     ->narrow(0, 0, currentNumQueries)
                                     .narrow(1, 0, currentNumBases);
 
-      // Compute Hamming Distance
-      /* Deprecated, Too Slow
-      computeHammingWithBinarizationFull(tileProjectionBufView, basesCodeView,
-                                         tileHammingBufView, streams[currentStream]);
-                                         */
       {
-        // DeviceTimer timer("Hamming Distance");
+        DeviceTimer timer("Hamming Distance");
         computeHammingDistance(tileQueriesCodeBufView, basesCodeView,
                                tileHammingBufView, streams[currentStream]);
-        // cudaDeviceSynchronize();
+        cudaDeviceSynchronize();
       }
 
       auto tileHammingSortDistBufView = tileHammingSortBufView.narrow(
@@ -535,7 +433,7 @@ void searchHammingDistance(DeviceResources* resources,
           1, numCandidates * currentBaseTile, numCandidates);
 
       {
-        //DeviceTimer timer("Select");
+        // DeviceTimer timer("Select");
         if (numCandidates <= 1024) {
           blockSelect(tileHammingBufView, tileHammingSortDistBufView,
                       tileIndicesSortDistBufView, numCandidates, false,
@@ -545,7 +443,7 @@ void searchHammingDistance(DeviceResources* resources,
                       tileIndicesSortDistBufView, numCandidates, false,
                       streams[currentStream]);
         }
-        //cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
       }
     }
 
