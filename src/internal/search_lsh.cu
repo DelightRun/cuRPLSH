@@ -8,6 +8,7 @@
 
 #include "internal/assertions.h"
 #include "internal/cuda_utils.h"
+#include "internal/hash_ops.h"
 #include "internal/kernel_utils.cuh"
 #include "internal/matrix_ops.h"
 #include "internal/norm.h"
@@ -130,72 +131,6 @@ void computeL2Distance(const Tensor<T, 2, IndexT>& queries,
   } else {
     EXECUTE_L2_DISTANCE(T, queries, bases);
   }
-}
-
-/* Binarization + Hamming */
-template <typename T, typename IndexT, int BatchSize = 8>
-__global__ void kernelBinarize(const Tensor<T, 2, IndexT> projections,
-                               Tensor<unsigned, 2, IndexT> codebook) {
-  IndexT threadId = threadIdx.x;
-  IndexT warpId = threadId / kWarpSize;
-  IndexT laneId = getLaneId();
-
-  IndexT idxOffset = blockIdx.x * BatchSize;
-
-  bool isLastBatch = ((projections.getSize(0) - idxOffset) < BatchSize);
-
-  T proj[BatchSize];
-  unsigned code[BatchSize];
-
-  if (isLastBatch) {
-    IndexT lastBatchSize = projections.getSize(0) - idxOffset;
-
-    for (int i = 0; i < lastBatchSize; ++i) {
-      proj[i] = projections[idxOffset + i][threadId];
-    }
-
-    for (int i = 0; i < lastBatchSize; ++i) {
-      bool vote = proj[i] > 0;
-      code[i] = ballot(vote);
-    }
-
-    if (laneId == 0) {
-      for (int i = 0; i < lastBatchSize; ++i) {
-        codebook[idxOffset + i][warpId] = code[i];
-      }
-    }
-  } else {
-#pragma unroll
-    for (int i = 0; i < BatchSize; ++i) {
-      proj[i] = projections[idxOffset + i][threadId];
-    }
-
-#pragma unroll
-    for (int i = 0; i < BatchSize; ++i) {
-      bool vote = proj[i] > 0;
-      code[i] = ballot(vote);
-    }
-
-    if (laneId == 0) {
-#pragma unroll
-      for (int i = 0; i < BatchSize; ++i) {
-        codebook[idxOffset + i][warpId] = code[i];
-      }
-    }
-  }
-}
-
-template <typename T, typename IndexT, typename CodeT, int BatchSize = 8>
-void binarize(const Tensor<T, 2, IndexT> projections,
-              Tensor<CodeT, 2, IndexT> codebook, cudaStream_t stream) {
-  host_assert(projections.getSize(0) == codebook.getSize(0));
-  host_assert(projections.getSize(1) == codebook.getSize(1) * sizeof(CodeT) * 8);
-  host_assert(codebook.template isCastable<unsigned>());
-
-  auto grid = dim3(divUp(projections.getSize(0), BatchSize));
-  auto block = dim3(projections.getSize(1));
-  kernelBinarize<<<grid, block, 0, stream>>>(projections,
-                                             codebook.template cast<unsigned>());
 }
 
 template <typename CodeT, typename DistT, typename IndexT, int TileSize = 32>
@@ -401,12 +336,9 @@ void searchHammingDistance(DeviceResources* resources,
     auto tileIndicesSortBufView =
         tileIndicesSortBufs[currentStream]->narrow(0, 0, currentNumQueries);
 
-    // Do projection
     matrixMultiply(tileProjectionBufView, false, queriesView, false, projMatrix,
                    false, 1.0f, 0.0f, resources->getBlasHandleCurrentDevice(),
                    streams[currentStream]);
-
-    // Binarization
     binarize(tileProjectionBufView, tileQueriesCodeBufView, streams[currentStream]);
 
     for (IndexT j = 0; j < bases.getSize(0); j += baseTileSize) {
@@ -471,10 +403,10 @@ void searchHammingDistance(DeviceResources* resources,
 
     // Step 1. L2 Distance
     {
-      // DeviceTimer timer("L2 Distance");
+      DeviceTimer timer("L2 Distance");
       computeL2Distance(queriesView, bases, *basesNorm, tileCandidateIndicesBufView,
                         tileL2DistanceBufView, streams[currentStream]);
-      // cudaDeviceSynchronize();
+      cudaDeviceSynchronize();
     }
 
     // Step 2. K-Select

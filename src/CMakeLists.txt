@@ -8,6 +8,7 @@ set(CUDA_SOURCE_FILES
   internal/broadcast.cu
   internal/norm.cu
   internal/matrix_ops.cu
+  internal/hash_ops.cu
   internal/search.cu
   internal/select.cu
   internal/build_lsh.cu
