@@ -6,13 +6,17 @@
 namespace curplsh {
 
 struct IndexBFConfig : public IndexConfig {
-  IndexBFConfig(bool storeTrans = false, bool computeExactDist = false)
-      : storeTransposed(storeTrans), computeExactDistances(computeExactDist) {}
+  IndexBFConfig(bool storeTrans = false) : storeTransposed(storeTrans) {}
 
   /// Whether or not data is stored (transparently) in a transposed layout.
   /// This will speedup GEMM (~10% faster), but substantially will slow down
   /// add() and increase storage requirements
   bool storeTransposed;
+};
+
+struct SearchBFParams {
+  SearchBFParams(bool computeExactDist = false)
+      : computeExactDistances(computeExactDist) {}
 
   /// Whether to compute exact distances, we only compute relative distance
   /// (-2qb + ||b||) by default
@@ -30,8 +34,8 @@ class IndexBF : public Index {
 
   void add(int num, const float* data) override;
 
-  void search(int num, const float* queries, int k, int* indices,
-              float* distances) override;
+  void search(int num, const float* queries, int k, int* indices, float* distances,
+              SearchBFParams params = SearchBFParams{});
 
   void reset() override;
 

@@ -49,9 +49,10 @@ class Index {
    * @param k           the number of returned nearest neighbors
    * @param indices     output indices of the k NNs, size num * k
    * @param distances   output pairwise distances, size num * k
-   */
   virtual void search(int num, const float* queries, int k, int* indices,
-                      float* distances) = 0;
+          float* distances, SearchParams params = SearchParams{}) {
+  };
+   */
 
   /// Remove all data from the index.
   virtual void reset() = 0;

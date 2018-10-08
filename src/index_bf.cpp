@@ -46,7 +46,7 @@ void IndexBF::add(int num, const float* data) {
 }
 
 void IndexBF::search(int num, const float* queries, int k, int* indices,
-                     float* distances) {
+                     float* distances, SearchBFParams params) {
   if (num <= 0) return;
 
   // For now, we assume all data can be resident on GPU.
@@ -71,7 +71,7 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
                         : DeviceTensor<float, 2>({num, k});
 
   searchL2Distance(resources_, data_, &norms_, queries_, k, indices_, distances_,
-                   true);
+                   params.computeExactDistances);
 
   // Copy back results if not using Unified Memory
   if (memorySpace_ != MemorySpace::Unified) {
