@@ -20,13 +20,14 @@ int main(int argc, const char **argv) {
     resources.initializeForDevice(device);
   }
 
-  curplsh::DatasetSIFT sift("/home/changxu/Datasets/sift");
+  curplsh::DatasetSIFT sift("/home/changxu/Datasets/sift",
+                            curplsh::MemorySpace::Unified);
 
   const int dim = sift.getDimension();
   const int k = sift.getGroundTruthK();
   const int numBases = sift.getNumBase();
   const int numQueries = sift.getNumQuery();
-  //const int numQueries = 1;
+  // const int numQueries = 1;
 
   curplsh::DeviceTensor<float, 2> bases(const_cast<float *>(sift.getBase()),
                                         {numBases, dim}, sift.getMemorySpace());
@@ -45,23 +46,9 @@ int main(int argc, const char **argv) {
 
   {
     curplsh::HostTimer timer;
-    // index.search(numQueries, queries.data(), k, indices.data(), distances.data());
-    curplsh::searchL2Distance(&resources, bases, nullptr, queries, k, indices,
-                              distances, false);
-  }
-
-  int *hIndices = new int[indices.getNumElements()];
-  float *hDistances = new float[distances.getNumElements()];
-
-  indices.toHost(hIndices);
-  distances.toHost(hDistances);
-
-  cudaDeviceSynchronize();
-
-  for (int i = 0; i < k; ++i) {
-    float dist = hDistances[i];
-    int idx = hIndices[i];
-    printf("#%d: %f, %d\n", i, dist, idx);
+    index.search(numQueries, queries.data(), k, indices.data(), distances.data());
+    // curplsh::searchL2Distance(&resources, bases, nullptr, queries, k, indices,
+    //                         distances, false);
   }
 
   if (numQueries == sift.getNumQuery()) {

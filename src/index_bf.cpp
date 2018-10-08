@@ -74,7 +74,6 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
   auto indices_ = DeviceTensor<int, 2>(indices, {num, k});
   auto distances_ = DeviceTensor<float, 2>(distances, {num, k});
 
-  //  TODO make this virtual
   searchL2Distance(resources_, data_, &norms_, queries_, k, indices_, distances_,
                    true);
 
