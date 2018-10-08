@@ -133,61 +133,6 @@ void computeL2Distance(const Tensor<T, 2, IndexT>& queries,
   }
 }
 
-template <typename CodeT, typename DistT, typename IndexT, int TileSize = 32>
-__global__ void kernelHammingDistance(Tensor<CodeT, 2, IndexT> queriesCode,
-                                      Tensor<CodeT, 2, IndexT> basesCode,
-                                      Tensor<DistT, 2, IndexT> distances) {
-  // TODO: arbitrary code length, use template specilization
-  __shared__ CodeT tileA[TileSize][TileSize];
-  __shared__ CodeT tileB[TileSize][TileSize];
-
-  IndexT row = blockIdx.y * blockDim.y + threadIdx.y;
-  IndexT col = blockIdx.x * blockDim.x + threadIdx.x;
-
-  // TODO: multiple tiles
-  if (row < distances.getSize(0)) {
-    tileA[threadIdx.y][threadIdx.x] = queriesCode[row][threadIdx.x];
-  }
-  if (col < distances.getSize(1)) {
-    tileB[threadIdx.y][threadIdx.x] = basesCode[col][threadIdx.y];
-  }
-
-  __syncthreads();
-
-  if ((row >= distances.getSize(0)) || (col >= distances.getSize(1))) return;
-
-  DistT dist = 0;
-  for (int i = 0; i < blockDim.x; ++i) {
-    DistT val = popcnt(tileA[threadIdx.y][i] ^ tileB[i][threadIdx.x]);
-    dist += val;
-  }
-  distances[row][col] = dist;
-}
-
-template <typename CodeT, typename DistT, typename IndexT, int BatchSize = 8>
-void computeHammingDistance(const Tensor<CodeT, 2, IndexT>& queriesCode,
-                            const Tensor<CodeT, 2, IndexT>& basesCode,
-                            Tensor<DistT, 2, IndexT>& distances,
-                            cudaStream_t stream) {
-  host_assert(distances.getSize(0) == queriesCode.getSize(0));
-  host_assert(distances.getSize(1) == basesCode.getSize(0));
-  host_assert(queriesCode.getSize(1) == basesCode.getSize(1));
-  // host_assert(basesCode.template isCastable<unsigned>());
-
-  // auto basesCodeCasted = basesCode.template cast<unsigned>();
-  // auto block = dim3(basesCodeCasted.getSize(1),
-  //                  kMaxThreadsPerBlock / basesCodeCasted.getSize(1));
-  auto block =
-      dim3(basesCode.getSize(1), kMaxThreadsPerBlock / basesCode.getSize(1));
-  auto grid = dim3(divUp(basesCode.getSize(0), block.y),
-                   divUp(queriesCode.getSize(0), block.y));
-
-  kernelHammingDistance<<<grid, block, 0, stream>>>(queriesCode, basesCode,
-                                                    distances);
-}
-
-/* End Binarization + Hamming */
-
 template <typename IndexT>
 void chooseTileSize(const IndexT numQueries, const IndexT numBases,
                     size_t elementSize, IndexT& queryTileSize,
