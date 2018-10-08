@@ -61,7 +61,6 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
 
   // To avoid unecessary mem copy, create an empty tensor if the given results ptr is
   // resident on another device (i.e. host or other devices)
-  /*
   auto indices_ = ((memorySpace_ == MemorySpace::Unified) ||
                    (getDeviceForAddress(indices) == device_))
                       ? DeviceTensor<int, 2>(indices, {num, k}, memorySpace_)
@@ -70,9 +69,6 @@ void IndexBF::search(int num, const float* queries, int k, int* indices,
                      (getDeviceForAddress(distances) == device_))
                         ? DeviceTensor<float, 2>(distances, {num, k}, memorySpace_)
                         : DeviceTensor<float, 2>({num, k});
-                        */
-  auto indices_ = DeviceTensor<int, 2>(indices, {num, k});
-  auto distances_ = DeviceTensor<float, 2>(distances, {num, k});
 
   searchL2Distance(resources_, data_, &norms_, queries_, k, indices_, distances_,
                    true);

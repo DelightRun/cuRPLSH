@@ -30,8 +30,7 @@ T* loadXvecsData(const char* filename, IndexT& num, IndexT& dim,
   size_t numElems = num * dim;
   T *data, *hostData;
   allocMemory(data, numElems, space);
-  hostData =
-      (space == MemorySpace::Device) ? new T[numElems] : data;
+  hostData = (space == MemorySpace::Device) ? new T[numElems] : data;
   host_assert(hostData);
 
   for (IndexT i = 0; i < num; ++i) {
@@ -48,7 +47,7 @@ T* loadXvecsData(const char* filename, IndexT& num, IndexT& dim,
 }
 
 // TODO: saveXvecsData
-}
+}  // namespace helper
 
 template <typename T, typename IndexT>
 class Dataset {
