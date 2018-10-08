@@ -201,7 +201,7 @@ class DatasetSIFT : public DatasetIrisa<int> {
       : DatasetIrisa<int>("sift", basedir, space) {}
 };
 
-class DatasetGIST : DatasetIrisa<int> {
+class DatasetGIST : public DatasetIrisa<int> {
  public:
   DatasetGIST(const char* basedir, MemorySpace space = MemorySpace::Device)
       : DatasetIrisa<int>("gist", basedir, space) {}

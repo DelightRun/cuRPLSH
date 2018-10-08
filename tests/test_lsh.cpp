@@ -19,7 +19,7 @@ int main(int argc, const char **argv) {
   curplsh::DeviceScope scope(device);
 
   curplsh::DatasetSIFT sift("/home/changxu/Datasets/sift/",
-                            curplsh::MemorySpace::Unified);
+                            curplsh::MemorySpace::Device);
 
   const int dim = sift.getDimension();
   const int k = sift.getGroundTruthK();

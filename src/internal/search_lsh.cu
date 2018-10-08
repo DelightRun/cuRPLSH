@@ -196,11 +196,11 @@ void chooseTileSize(const IndexT numQueries, const IndexT numBases,
 
   auto targetUsage = globalMem;
   if (globalMem <= (static_cast<size_t>(4)) * 1024 * 1024 * 1024) {
-    targetUsage = 512 * 1024 * 1024;
+    targetUsage = static_cast<size_t>(2) * 1024 * 1024 * 1024;
   } else if (globalMem <= (static_cast<size_t>(8)) * 1024 * 1024 * 1024) {
     targetUsage = 768 * 1024 * 1024;
   } else {
-    // targetUsage = 1024 * 1024 * 1024;
+    targetUsage = 1024 * 1024 * 1024;
   }
 
   targetUsage /= 2 * elementSize;
@@ -353,10 +353,10 @@ void searchHammingDistance(DeviceResources* resources,
                                     .narrow(1, 0, currentNumBases);
 
       {
-        DeviceTimer timer("Hamming Distance");
+        // DeviceTimer timer("Hamming Distance");
         computeHammingDistance(tileQueriesCodeBufView, basesCodeView,
                                tileHammingBufView, streams[currentStream]);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
       }
 
       auto tileHammingSortDistBufView = tileHammingSortBufView.narrow(
