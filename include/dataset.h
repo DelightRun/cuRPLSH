@@ -34,7 +34,7 @@ T* loadXvecsData(const char* filename, IndexT& num, IndexT& dim,
   host_assert(hostData);
 
   for (IndexT i = 0; i < num; ++i) {
-    file.seekg(4, std::ios::cur);
+    file.seekg(sizeof(IndexT), std::ios::cur);
     file.read((char*)(hostData + i * dim), dim * sizeof(T));
   }
   file.close();
